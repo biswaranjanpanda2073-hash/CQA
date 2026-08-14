@@ -1,0 +1,582 @@
+const BaanRequest = () => {
+    const { store, requestBaanPart, getBaanRecommendations } = useCQA();
+    const [currentStep, setCurrentStep] = useState(1);
+    const [formData, setFormData] = useState({
+        deviceSn: '',
+        issueCategory: '',
+        parts: [],
+        remarks: ''
+    });
+
+    const [currentPart, setCurrentPart] = useState({ partNumber: '', quantityRequested: 1 });
+    const [recommendations, setRecommendations] = useState([]);
+    const [isLoadingRecs, setIsLoadingRecs] = useState(false);
+    
+    // Feedback states
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [statusMessage, setStatusMessage] = useState(null);
+    const [errorMessage, setErrorMessage] = useState(null);
+
+    const availableParts = useMemo(() => 
+        Object.values(store.baan.parts || {}).sort((a,b) => a.id.localeCompare(b.id)), 
+    [store.baan.parts]);
+
+    const nextStep = () => {
+        setErrorMessage(null);
+        if (currentStep === 1 && !formData.deviceSn.trim()) {
+            setErrorMessage('Device Serial Number is required.');
+            return;
+        }
+        if (currentStep === 2 && !formData.issueCategory) {
+            setErrorMessage('Issue Category is required.');
+            return;
+        }
+        if (currentStep === 3 && formData.parts.length === 0) {
+            setErrorMessage('Please add at least one part.');
+            return;
+        }
+        setCurrentStep(prev => prev + 1);
+    };
+
+    const prevStep = () => {
+        setErrorMessage(null);
+        setCurrentStep(prev => prev - 1);
+    };
+
+    const handleCategoryChange = async (val) => {
+        setFormData(prev => ({ ...prev, issueCategory: val }));
+        if (!val) {
+            setRecommendations([]);
+            return;
+        }
+        setIsLoadingRecs(true);
+        await new Promise(r => setTimeout(r, 600));
+        const recs = getBaanRecommendations(val);
+        setRecommendations(recs);
+        setIsLoadingRecs(false);
+    };
+
+    const addPartToRequest = (partToAdd = currentPart) => {
+        if (!partToAdd.partNumber) return;
+        
+        const existingIndex = formData.parts.findIndex(p => p.partNumber === partToAdd.partNumber);
+        if (existingIndex >= 0) {
+            setFormData(prev => ({
+                ...prev,
+                parts: prev.parts.map((p, i) => i === existingIndex ? { ...p, quantityRequested: Number(p.quantityRequested) + Number(partToAdd.quantityRequested) } : p)
+            }));
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                parts: [...prev.parts, { ...partToAdd }]
+            }));
+        }
+        
+        if (partToAdd === currentPart) {
+            setCurrentPart({ partNumber: '', quantityRequested: 1 });
+        }
+        setErrorMessage(null);
+    };
+
+    const removePartFromRequest = (index) => {
+        setFormData(prev => ({ ...prev, parts: prev.parts.filter((_, i) => i !== index) }));
+    };
+
+    const updateRowQty = (index, delta) => {
+        setFormData(prev => ({
+            ...prev,
+            parts: prev.parts.map((p, i) => i === index ? { ...p, quantityRequested: Math.max(1, Number(p.quantityRequested) + delta) } : p)
+        }));
+    };
+
+    const addToCurrent = (partNum) => {
+        addPartToRequest({ partNumber: partNum, quantityRequested: 1 });
+    };
+
+    const handleSubmit = async () => {
+        setErrorMessage(null);
+        if (formData.parts.length === 0) {
+            setErrorMessage('Please add at least one part before submitting.');
+            return;
+        }
+
+        setIsSubmitting(true);
+        setStatusMessage(null);
+
+        try {
+            const user = JSON.parse(localStorage.getItem('cqa_user') || '{}');
+            const res = await requestBaanPart(formData, user);
+            if (res.success) {
+                setFormData({ deviceSn: '', issueCategory: '', parts: [], remarks: '' });
+                setCurrentPart({ partNumber: '', quantityRequested: 1 });
+                setRecommendations([]);
+                setCurrentStep(1);
+                setStatusMessage(`Success! Request ID: ${res.requestId} generated.`);
+                setTimeout(() => setStatusMessage(null), 8000);
+            } else {
+                setErrorMessage(res.message || 'Failed to submit request.');
+            }
+        } catch (error) {
+            console.error(error);
+            setErrorMessage('A network error occurred. Please test connectivity.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const ISSUE_CATEGORIES = [
+        'Charging Fail', 'Display Damage', 'Printer Issue', 'Touch Fail',
+        'Battery Drain', 'Network Issue', 'No Power', 'Keypad Fault',
+        'Speaker Issue', 'Top Panel Issue', 'Bottom Panel Issue', 'GSM Issue',
+        'WI-Fi Issue', 'Bluetooth Issue', 'Software Issue', 'Battery Cover Damage',
+        'Component Damage', 'Defective Component'
+    ];
+
+    const steps = [
+        { id: 1, label: 'Device Info' },
+        { id: 2, label: 'Issue Details' },
+        { id: 3, label: 'Part Selection' },
+        { id: 4, label: 'Review' }
+    ];
+
+    // Enterprise UI Styles
+    const cardStyle = {
+        backgroundColor: '#ffffff',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+        border: '1px solid #e2e8f0',
+        padding: '24px'
+    };
+
+    const labelStyle = {
+        display: 'block',
+        fontSize: '13px',
+        fontWeight: '600',
+        color: '#4a5568',
+        marginBottom: '6px'
+    };
+
+    const inputStyle = {
+        width: '100%',
+        padding: '10px 14px',
+        fontSize: '14px',
+        border: '1px solid #cbd5e0',
+        borderRadius: '6px',
+        outline: 'none',
+        backgroundColor: '#fff',
+        transition: 'border-color 0.2s',
+        color: '#2d3748'
+    };
+
+    const renderCTA = () => (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+            <button
+                type="button"
+                onClick={prevStep}
+                disabled={isSubmitting || currentStep === 1}
+                style={{
+                    visibility: currentStep === 1 ? 'hidden' : 'visible',
+                    padding: '10px 24px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    borderRadius: '6px',
+                    backgroundColor: '#edf2f7',
+                    color: '#4a5568',
+                    cursor: (isSubmitting || currentStep === 1) ? 'not-allowed' : 'pointer',
+                    border: 'none',
+                    transition: 'all 0.2s'
+                }}
+            >
+                Back
+            </button>
+
+            {currentStep < 4 ? (
+                <button
+                    type="button"
+                    onClick={nextStep}
+                    disabled={isSubmitting}
+                    style={{
+                        padding: '10px 28px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--primary)',
+                        color: '#fff',
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    Continue <ChevronRight size={16} />
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    style={{
+                        padding: '10px 28px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--success)',
+                        color: '#fff',
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    {isSubmitting ? <><Loader2 className="animate-spin" size={16} /> Submitting...</> : <><Send size={16} /> Submit Request</>}
+                </button>
+            )}
+        </div>
+    );
+
+    const renderStepContent = () => {
+        switch (currentStep) {
+            case 1:
+                return (
+                    <motion.div key="step1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={cardStyle}>
+                        <div style={{ marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1a202c', margin: '0 0 4px 0' }}>Device Information</h3>
+                            <p style={{ fontSize: '14px', color: '#718096', margin: 0 }}>Identify the unit undergoing repair.</p>
+                        </div>
+                        
+                        <div style={{ marginBottom: '8px' }}>
+                            <label style={labelStyle}>Device Serial Number <span style={{ color: '#e53e3e' }}>*</span></label>
+                            <input
+                                required
+                                autoFocus
+                                placeholder="Scan or enter device serial number"
+                                style={{ ...inputStyle, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '1px' }}
+                                value={formData.deviceSn}
+                                onChange={e => setFormData({ ...formData, deviceSn: e.target.value.toUpperCase().replace(/\//g, '-') })}
+                                onKeyDown={e => e.key === 'Enter' && formData.deviceSn ? nextStep() : null}
+                            />
+                        </div>
+                        {renderCTA()}
+                    </motion.div>
+                );
+            case 2:
+                return (
+                    <motion.div key="step2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={cardStyle}>
+                        <div style={{ marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1a202c', margin: '0 0 4px 0' }}>Issue Details</h3>
+                            <p style={{ fontSize: '14px', color: '#718096', margin: 0 }}>Categorize the defect and provide context.</p>
+                        </div>
+                        
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={labelStyle}>Issue Category <span style={{ color: '#e53e3e' }}>*</span></label>
+                            <select
+                                required
+                                value={formData.issueCategory}
+                                onChange={e => handleCategoryChange(e.target.value)}
+                                style={inputStyle}
+                            >
+                                <option value="">Select Category...</option>
+                                {ISSUE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                        </div>
+                        
+                        <div style={{ marginBottom: '8px' }}>
+                            <label style={labelStyle}>Repair Remarks (Optional)</label>
+                            <textarea
+                                rows={3}
+                                placeholder="Additional details about the defect..."
+                                style={{ ...inputStyle, resize: 'vertical' }}
+                                value={formData.remarks}
+                                onChange={e => setFormData({ ...formData, remarks: e.target.value })}
+                            />
+                        </div>
+                        {renderCTA()}
+                    </motion.div>
+                );
+            case 3:
+                return (
+                    <motion.div key="step3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={cardStyle}>
+                        <div style={{ marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1a202c', margin: '0 0 4px 0' }}>Part Selection</h3>
+                            <p style={{ fontSize: '14px', color: '#718096', margin: 0 }}>Search and append required replacement parts.</p>
+                        </div>
+                        
+                        {formData.parts.length > 0 && (
+                            <div style={{ marginBottom: '24px', backgroundColor: '#f7fafc', padding: '16px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                <h4 style={{ fontSize: '12px', fontWeight: '700', color: '#718096', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <ClipboardList size={14} /> Selected Cart ({formData.parts.length})
+                                </h4>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {formData.parts.map((p, i) => (
+                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '12px 16px', borderRadius: '4px', border: '1px solid #cbd5e0' }}>
+                                            <div>
+                                                <div style={{ fontWeight: '700', fontSize: '14px', fontFamily: 'monospace', color: '#2d3748' }}>{p.partNumber}</div>
+                                                <div style={{ fontSize: '12px', color: '#718096', marginTop: '2px' }}>{store.baan.parts?.[p.partNumber]?.name || 'Unknown Part'}</div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#f7fafc', borderRadius: '4px', padding: '4px', border: '1px solid #e2e8f0' }}>
+                                                    <button type="button" onClick={() => updateRowQty(i, -1)} style={{ padding: '4px', display: 'flex', cursor: 'pointer', border: 'none', background: 'transparent' }}><Minus size={14} color="#4a5568" /></button>
+                                                    <span style={{ fontWeight: '700', fontSize: '14px', width: '30px', textAlign: 'center', color: '#2d3748' }}>{p.quantityRequested}</span>
+                                                    <button type="button" onClick={() => updateRowQty(i, 1)} style={{ padding: '4px', display: 'flex', cursor: 'pointer', border: 'none', background: 'transparent' }}><Plus size={14} color="#4a5568" /></button>
+                                                </div>
+                                                <button type="button" onClick={() => removePartFromRequest(i)} style={{ padding: '4px', display: 'flex', cursor: 'pointer', border: 'none', background: 'transparent' }}>
+                                                    <X size={18} color="#e53e3e" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', backgroundColor: '#f0f4f8', padding: '16px', borderRadius: '6px', border: '1px dashed var(--primary)' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ ...labelStyle, color: 'var(--primary)', fontSize: '12px' }}>Search Part Master</label>
+                                <select 
+                                    style={inputStyle}
+                                    value={currentPart.partNumber}
+                                    onChange={e => setCurrentPart({ ...currentPart, partNumber: e.target.value })}
+                                >
+                                    <option value="">-- Type to Search --</option>
+                                    {availableParts.map(part => (
+                                        <option key={part.id} value={part.id}>{part.id} - {part.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={{ width: '80px' }}>
+                                <label style={{ ...labelStyle, color: 'var(--primary)', fontSize: '12px', textAlign: 'center' }}>Qty</label>
+                                <input 
+                                    type="number" min="1" 
+                                    style={{ ...inputStyle, textAlign: 'center' }}
+                                    value={currentPart.quantityRequested}
+                                    onChange={e => setCurrentPart({ ...currentPart, quantityRequested: Math.max(1, parseInt(e.target.value) || 1) })}
+                                />
+                            </div>
+                            <button 
+                                type="button" 
+                                disabled={!currentPart.partNumber}
+                                onClick={() => addPartToRequest()}
+                                style={{
+                                    height: '42px',
+                                    padding: '0 24px',
+                                    backgroundColor: 'var(--primary)',
+                                    color: '#fff',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    fontWeight: '600',
+                                    cursor: currentPart.partNumber ? 'pointer' : 'not-allowed',
+                                    opacity: currentPart.partNumber ? 1 : 0.6,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                <Plus size={16} /> Add
+                            </button>
+                        </div>
+                        {renderCTA()}
+                    </motion.div>
+                );
+            case 4:
+                return (
+                    <motion.div key="step4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={cardStyle}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '32px' }}>
+                            <CheckCircle2 size={48} color="var(--success)" style={{ marginBottom: '16px' }} />
+                            <h3 style={{ fontSize: '22px', fontWeight: '800', color: '#1a202c', margin: '0 0 8px 0' }}>Review & Submit</h3>
+                            <p style={{ fontSize: '14px', color: '#718096', margin: 0 }}>Verify the summary below before finalizing.</p>
+                        </div>
+                        
+                        <div style={{ backgroundColor: '#f7fafc', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', gap: '32px', marginBottom: '24px' }}>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Device SN</p>
+                                    <p style={{ fontSize: '16px', fontWeight: '700', color: '#2d3748', margin: 0 }}>{formData.deviceSn}</p>
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Category</p>
+                                    <p style={{ fontSize: '16px', fontWeight: '700', color: '#2d3748', margin: 0 }}>{formData.issueCategory}</p>
+                                </div>
+                            </div>
+
+                            {formData.remarks && (
+                                <div style={{ marginBottom: '24px' }}>
+                                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Remarks</p>
+                                    <p style={{ fontSize: '14px', color: '#4a5568', margin: 0, backgroundColor: '#fff', padding: '12px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>{formData.remarks}</p>
+                                </div>
+                            )}
+                            
+                            <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '24px 0' }} />
+                            
+                            <p style={{ fontSize: '12px', fontWeight: '700', color: '#a0aec0', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Requested Replacements ({formData.parts.length})</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {formData.parts.map((p, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                        <div>
+                                            <span style={{ fontWeight: '700', fontSize: '14px', fontFamily: 'monospace', color: '#2d3748' }}>{p.partNumber}</span>
+                                            <span style={{ marginLeft: '8px', fontSize: '13px', color: '#718096' }}>{store.baan.parts?.[p.partNumber]?.name}</span>
+                                        </div>
+                                        <span style={{ fontWeight: '700', fontSize: '14px', backgroundColor: 'var(--primary-alpha)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px' }}>Qty: {p.quantityRequested}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        {renderCTA()}
+                    </motion.div>
+                );
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <div className="animate-fade-in" style={{ paddingBottom: '60px' }}>
+            {/* Header */}
+            <div style={{ marginBottom: '32px' }}>
+                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#1a202c', margin: '0 0 8px 0' }}>Request Part for Repair</h1>
+                <p style={{ fontSize: '15px', color: '#718096', margin: 0 }}>Create a managed dispatch ticket dynamically tied to inventory matching rules.</p>
+            </div>
+
+            {/* Alert Messages */}
+            {statusMessage && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0fff4', color: '#2f855a', padding: '16px 20px', borderRadius: '8px', border: '1px solid #c6f6d5', marginBottom: '24px', fontWeight: '600', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={20} /> {statusMessage}</div>
+                    <button onClick={() => setStatusMessage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}><X size={18} color="#2f855a" /></button>
+                </div>
+            )}
+            {errorMessage && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fff5f5', color: '#c53030', padding: '16px 20px', borderRadius: '8px', border: '1px solid #fed7d7', marginBottom: '24px', fontWeight: '600', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                    <AlertTriangle size={20} /> {errorMessage}
+                </div>
+            )}
+
+            {/* Main Layout Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '70% 28%', gap: '2%', alignItems: 'start' }}>
+                
+                {/* Left Column: 70% Width */}
+                <div>
+                    {/* Horizontal Enterprise Stepper */}
+                    <div style={{ ...cardStyle, marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px' }}>
+                            {steps.map((step, index) => {
+                                const isActive = currentStep === step.id;
+                                const isPast = currentStep > step.id;
+                                const color = isActive ? 'var(--primary)' : isPast ? 'var(--success)' : '#a0aec0';
+                                
+                                return (
+                                    <React.Fragment key={step.id}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: '700', color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                {isPast && <CheckCircle2 size={16} color="var(--success)" />}
+                                                {!isPast && <span style={{ opacity: isActive ? 1 : 0.6 }}>0{step.id} -</span>}
+                                                {step.label}
+                                            </span>
+                                        </div>
+                                        {index < steps.length - 1 && (
+                                            <div style={{ flex: 1, height: '2px', backgroundColor: isPast ? 'var(--success)' : '#edf2f7', margin: '0 16px' }} />
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Step Form Area */}
+                    <div style={{ minHeight: '400px' }}>
+                        {renderStepContent()}
+                    </div>
+                </div>
+
+                {/* Right Column: 30% Width (Sticky) */}
+                <div style={{ position: 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    
+                    {/* Smart Predictions Card */}
+                    <div style={{ ...cardStyle, borderTop: '4px solid var(--primary)', padding: '24px', marginBottom: '0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <TrendingUp size={18} color="var(--primary)" />
+                            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1a202c', margin: 0 }}>Smart Predictions</h3>
+                        </div>
+                        <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 20px 0', lineHeight: 1.4 }}>Frequent parts used for this category based on statistical repair history.</p>
+                        
+                        {!formData.issueCategory ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center', backgroundColor: '#f7fafc', border: '1px dashed #cbd5e0', borderRadius: '6px' }}>
+                                <Search size={28} color="#a0aec0" style={{ margin: '0 auto 12px' }} />
+                                <p style={{ fontSize: '13px', color: '#718096', margin: 0, lineHeight: 1.5 }}>Select an <strong>Issue Category</strong> in Step 2 to generate predictions.</p>
+                            </div>
+                        ) : (
+                            <div style={{ minHeight: '180px' }}>
+                                {isLoadingRecs ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 0', gap: '12px' }}>
+                                        <Loader2 className="animate-spin" size={28} color="var(--primary)" />
+                                        <p style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', color: '#a0aec0', margin: 0 }}>Analyzing</p>
+                                    </div>
+                                ) : recommendations.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        {recommendations.map(rec => {
+                                            const totalParts = recommendations.reduce((a, b) => a + b.count, 0) || 1;
+                                            const freq = Math.round((rec.count / totalParts) * 100);
+                                            return (
+                                                <div key={rec.partNumber} style={{ backgroundColor: '#f7fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                        <div>
+                                                            <p style={{ fontSize: '14px', fontWeight: '700', color: '#2d3748', margin: '0 0 4px 0', lineHeight: 1.2 }}>{rec.partName || 'Unknown Part'}</p>
+                                                            <p style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: '700', color: 'var(--primary)', margin: 0 }}>{rec.partNumber}</p>
+                                                        </div>
+                                                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#2f855a', backgroundColor: '#f0fff4', padding: '2px 6px', borderRadius: '4px' }}>
+                                                            {freq}% Match
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addToCurrent(rec.partNumber)}
+                                                        disabled={currentStep !== 3}
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '8px',
+                                                            fontSize: '12px',
+                                                            fontWeight: '600',
+                                                            color: 'var(--primary)',
+                                                            backgroundColor: 'var(--primary-alpha)',
+                                                            border: 'none',
+                                                            borderRadius: '4px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            gap: '6px',
+                                                            cursor: currentStep === 3 ? 'pointer' : 'not-allowed',
+                                                            opacity: currentStep === 3 ? 1 : 0.5
+                                                        }}
+                                                    >
+                                                        <Plus size={14} /> Add to Cart
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div style={{ padding: '40px 20px', textAlign: 'center', backgroundColor: '#f7fafc', border: '1px dashed #cbd5e0', borderRadius: '6px' }}>
+                                        <p style={{ fontSize: '13px', color: '#718096', margin: 0, lineHeight: 1.5 }}>No correlation history found for <strong>{formData.issueCategory}</strong>.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Policy Card */}
+                    <div style={{ ...cardStyle, padding: '24px', marginBottom: '0' }}>
+                        <h4 style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: '#718096', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <ShieldCheck size={16} /> Module Policy
+                        </h4>
+                        <p style={{ fontSize: '13px', color: '#4a5568', margin: 0, lineHeight: 1.6 }}>
+                            Approval is required for high-volume dispatch. System automatically allocates parts using <strong>strict FIFO</strong> rules. Ensure structural correctness before final submission locking.
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    );
+};
