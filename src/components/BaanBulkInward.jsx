@@ -175,92 +175,204 @@ const BaanBulkInward = () => {
 
     return (
         <div className="animate-fade-in">
-            <h2 className="font-bold" style={{ marginBottom: '1.5rem' }}>Bulk Inward Upload</h2>
-            
-            <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <div className="card-body">
-                    <div className="flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
-                        <div>
-                            <p className="text-sm text-muted" style={{ marginBottom: '0.5rem' }}>Download the template, fill it out, and upload it back here.</p>
-                            <button className="btn btn-secondary" onClick={downloadTemplate}>
-                                <FileSpreadsheet size={16} /> Download Template
-                            </button>
-                        </div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <input 
-                                type="file" 
-                                id="bulk-upload-input" 
-                                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
-                                style={{ display: 'none' }}
-                                onChange={handleFileUpload}
-                            />
-                            <button className="btn btn-primary" onClick={() => document.getElementById('bulk-upload-input').click()}>
-                                <Upload size={16} /> Select File
-                            </button>
-                            {file && <span className="text-sm font-semibold">{file.name}</span>}
-                        </div>
-                    </div>
+            <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
+                <div>
+                    <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>Bulk Inward Stock Import</h2>
+                    <p className="baan-subtitle">Fast batch inward via Excel (.xlsx) or CSV template with automated FIFO verification</p>
                 </div>
             </div>
 
+            {/* 3-Step Guided Workflow Cards */}
+            <div className="baan-wizard-steps">
+                {/* Step 1: Download Template */}
+                <div className={`baan-wizard-step-card ${!file && previewData.length === 0 ? 'active' : ''}`}>
+                    <div className="baan-wizard-step-num">1</div>
+                    <h4 className="font-bold text-sm" style={{ color: 'var(--baan-text-primary)', marginBottom: '0.35rem' }}>Download Template</h4>
+                    <p className="text-xs text-muted" style={{ marginBottom: '1rem', lineHeight: '1.4' }}>
+                        Get the pre-formatted Excel template with required fields (Part No, Name, Qty, PPU, UOM, DC #, Location Selection).
+                    </p>
+                    <button className="baan-btn secondary" onClick={downloadTemplate} style={{ width: '100%' }}>
+                        <FileSpreadsheet size={15} /> Download Template (.xlsx)
+                    </button>
+                </div>
+
+                {/* Step 2: Upload File */}
+                <div className={`baan-wizard-step-card ${file ? 'active' : ''}`}>
+                    <div className="baan-wizard-step-num">2</div>
+                    <h4 className="font-bold text-sm" style={{ color: 'var(--baan-text-primary)', marginBottom: '0.35rem' }}>Upload Filled File</h4>
+                    <p className="text-xs text-muted" style={{ marginBottom: '1rem', lineHeight: '1.4' }}>
+                        Upload your completed spreadsheet. System parses and validates all batch and location records automatically.
+                    </p>
+                    <input 
+                        type="file" 
+                        id="bulk-upload-input" 
+                        accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+                        style={{ display: 'none' }}
+                        onChange={handleFileUpload}
+                    />
+                    <button 
+                        className="baan-btn primary" 
+                        onClick={() => document.getElementById('bulk-upload-input').click()}
+                        style={{ width: '100%' }}
+                    >
+                        <Upload size={15} /> {file ? 'Change File' : 'Select Spreadsheet'}
+                    </button>
+                    {file && (
+                        <div className="text-xs font-bold text-mono truncate" style={{ marginTop: '0.5rem', color: 'var(--baan-accent)', textAlign: 'center' }}>
+                            📄 {file.name}
+                        </div>
+                    )}
+                </div>
+
+                {/* Step 3: Validate & Import */}
+                <div className={`baan-wizard-step-card ${previewData.length > 0 ? 'active' : ''}`}>
+                    <div className="baan-wizard-step-num">3</div>
+                    <h4 className="font-bold text-sm" style={{ color: 'var(--baan-text-primary)', marginBottom: '0.35rem' }}>Review & Confirm</h4>
+                    <p className="text-xs text-muted" style={{ marginBottom: '1rem', lineHeight: '1.4' }}>
+                        Inspect parsed rows, verify validation status and location tagging, then commit batches into inventory.
+                    </p>
+                    <button 
+                        className="baan-btn primary" 
+                        onClick={handleConfirmUpload}
+                        disabled={isProcessing || previewData.filter(r => r.status !== 'Error').length === 0}
+                        style={{ width: '100%' }}
+                    >
+                        {isProcessing ? (
+                            <><Loader2 size={15} className="animate-spin" /> Processing...</>
+                        ) : (
+                            <><CheckCircle2 size={15} /> Confirm Inward ({previewData.filter(r => r.status !== 'Error').length})</>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* Status Alert Banner */}
             {uploadStatus && (
-                <div className={`alert alert-${uploadStatus.type}`} style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', borderRadius: '8px', backgroundColor: uploadStatus.type === 'error' ? 'var(--error-bg)' : 'var(--success-bg)', color: uploadStatus.type === 'error' ? 'var(--error)' : 'var(--success)' }}>
-                    {uploadStatus.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
-                    <span className="font-semibold">{uploadStatus.message}</span>
+                <div className="baan-card" style={{ 
+                    padding: '0.875rem 1.25rem', 
+                    marginBottom: '1.25rem',
+                    borderLeft: `4px solid ${uploadStatus.type === 'error' ? 'var(--baan-danger)' : 'var(--baan-success)'}`,
+                    background: uploadStatus.type === 'error' ? 'var(--baan-danger-bg)' : 'var(--baan-success-bg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem'
+                }}>
+                    {uploadStatus.type === 'error' ? (
+                        <AlertCircle size={20} style={{ color: 'var(--baan-danger)', flexShrink: 0 }} />
+                    ) : (
+                        <CheckCircle2 size={20} style={{ color: 'var(--baan-success)', flexShrink: 0 }} />
+                    )}
+                    <span className="text-sm font-bold" style={{ color: 'var(--baan-text-primary)' }}>{uploadStatus.message}</span>
                 </div>
             )}
 
+            {/* Upload Summary Metrics */}
             {uploadSummary && (
-                <div className="grid md-grid-4 gap-4" style={{ marginBottom: '1.5rem' }}>
-                    <div className="card"><div className="card-body"><p className="text-xs text-muted uppercase font-bold">Total Rows</p><h3 className="font-extrabold">{uploadSummary.total}</h3></div></div>
-                    <div className="card"><div className="card-body"><p className="text-xs text-muted uppercase font-bold">Successful</p><h3 className="font-extrabold text-success">{uploadSummary.success}</h3></div></div>
-                    <div className="card"><div className="card-body"><p className="text-xs text-muted uppercase font-bold">Failed (Errors)</p><h3 className="font-extrabold text-error">{uploadSummary.failed}</h3></div></div>
-                    <div className="card"><div className="card-body"><p className="text-xs text-muted uppercase font-bold">Parts Processed</p><h3 className="font-extrabold">{uploadSummary.existingUpdated + uploadSummary.newCreated}</h3></div></div>
+                <div className="baan-kpi-grid" style={{ marginBottom: '1.25rem' }}>
+                    <div className="baan-kpi-card" style={{ cursor: 'default' }}>
+                        <div>
+                            <div className="baan-kpi-label">Total Rows</div>
+                            <div className="baan-kpi-value">{uploadSummary.total}</div>
+                        </div>
+                        <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-surface-muted)', color: 'var(--baan-text-secondary)' }}>
+                            <FileSpreadsheet size={20} />
+                        </div>
+                    </div>
+                    <div className="baan-kpi-card" style={{ cursor: 'default' }}>
+                        <div>
+                            <div className="baan-kpi-label">Successfully Inwarded</div>
+                            <div className="baan-kpi-value" style={{ color: 'var(--baan-success)' }}>{uploadSummary.success}</div>
+                        </div>
+                        <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-success-bg)', color: 'var(--baan-success)' }}>
+                            <CheckCircle2 size={20} />
+                        </div>
+                    </div>
+                    <div className="baan-kpi-card" style={{ cursor: 'default' }}>
+                        <div>
+                            <div className="baan-kpi-label">Failed (Errors)</div>
+                            <div className="baan-kpi-value" style={{ color: uploadSummary.failed > 0 ? 'var(--baan-danger)' : 'var(--baan-text-primary)' }}>
+                                {uploadSummary.failed}
+                            </div>
+                        </div>
+                        <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-danger-bg)', color: 'var(--baan-danger)' }}>
+                            <AlertCircle size={20} />
+                        </div>
+                    </div>
+                    <div className="baan-kpi-card" style={{ cursor: 'default' }}>
+                        <div>
+                            <div className="baan-kpi-label">Parts Processed</div>
+                            <div className="baan-kpi-value">{uploadSummary.existingUpdated + uploadSummary.newCreated}</div>
+                        </div>
+                        <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-info-bg)', color: 'var(--baan-info)' }}>
+                            <Upload size={20} />
+                        </div>
+                    </div>
                 </div>
             )}
 
+            {/* Preview Table */}
             {previewData.length > 0 && (
-                <div className="card">
-                    <div className="card-header flex-between">
-                        <h3 className="text-sm font-bold">Upload Preview ({previewData.length} rows)</h3>
+                <div className="baan-card">
+                    <div className="baan-card-header">
+                        <div className="baan-card-title">
+                            <FileSpreadsheet size={16} style={{ color: 'var(--baan-accent)' }} />
+                            Upload Preview & FIFO Verification ({previewData.length} rows)
+                        </div>
                         <button 
-                            className="btn btn-primary" 
+                            className="baan-btn primary" 
                             onClick={handleConfirmUpload}
                             disabled={isProcessing || previewData.filter(r => r.status !== 'Error').length === 0}
                         >
-                            {isProcessing ? <><Loader2 size={16} className="spin" /> Processing...</> : <><CheckCircle2 size={16} /> Confirm Upload</>}
+                            {isProcessing ? (
+                                <><Loader2 size={15} className="animate-spin" /> Processing...</>
+                            ) : (
+                                <><CheckCircle2 size={15} /> Confirm Inward ({previewData.filter(r => r.status !== 'Error').length})</>
+                            )}
                         </button>
                     </div>
-                    <div className="table-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                        <table>
-                            <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', zIndex: 1 }}>
+                    <div className="baan-table-wrapper" style={{ maxHeight: '420px', overflowY: 'auto', border: 'none' }}>
+                        <table className="baan-table">
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
                                 <tr>
-                                    <th>Row</th>
-                                    <th>Part No</th>
+                                    <th style={{ width: 60 }}>Row</th>
+                                    <th>Part Number</th>
                                     <th>Part Name</th>
-                                    <th>Qty</th>
-                                    <th>Cost</th>
+                                    <th className="num-col">Quantity</th>
+                                    <th className="num-col">PPU (₹)</th>
                                     <th>Location</th>
                                     <th>Status</th>
-                                    <th>Message</th>
+                                    <th>Validation Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {previewData.map((row, idx) => (
-                                    <tr key={idx} style={{ backgroundColor: row.status === 'Error' ? 'var(--error-bg)' : row.status === 'Warning' ? 'var(--warning-bg)' : 'inherit' }}>
-                                        <td>{row.rowNumber}</td>
-                                        <td className="font-bold text-mono">{row.partNo}</td>
-                                        <td>{row.partName}</td>
-                                        <td>{row.qty} {row.uom}</td>
-                                        <td>₹{row.cost}</td>
-                                        <td>{row.location}</td>
+                                    <tr key={idx} style={{ 
+                                        backgroundColor: row.status === 'Error' 
+                                            ? 'var(--baan-danger-bg)' 
+                                            : row.status === 'Warning' 
+                                                ? 'var(--baan-warning-bg)' 
+                                                : 'inherit' 
+                                    }}>
+                                        <td className="text-mono font-bold">{row.rowNumber}</td>
+                                        <td className="font-bold text-mono" style={{ color: 'var(--baan-accent)' }}>{row.partNo}</td>
+                                        <td className="font-semibold">{row.partName}</td>
+                                        <td className="num-col font-bold">{row.qty} <span className="text-xs text-muted">{row.uom}</span></td>
+                                        <td className="num-col">₹{row.cost.toFixed(2)}</td>
                                         <td>
-                                            {row.status === 'Error' && <span className="status-pill error"><AlertCircle size={12}/> Error</span>}
-                                            {row.status === 'Warning' && <span className="status-pill warning"><AlertTriangle size={12}/> Warning</span>}
-                                            {row.status === 'Valid' && <span className="status-pill success"><CheckCircle2 size={12}/> Valid</span>}
+                                            <span className="baan-badge neutral">📍 {row.location}</span>
                                         </td>
-                                        <td className="text-xs">{row.messages.join(' | ')}</td>
+                                        <td>
+                                            {row.status === 'Error' && (
+                                                <span className="baan-badge danger"><AlertCircle size={11}/> Error</span>
+                                            )}
+                                            {row.status === 'Warning' && (
+                                                <span className="baan-badge warning"><AlertTriangle size={11}/> Warning</span>
+                                            )}
+                                            {row.status === 'Valid' && (
+                                                <span className="baan-badge success"><CheckCircle2 size={11}/> Valid</span>
+                                            )}
+                                        </td>
+                                        <td className="text-xs text-muted">{row.messages.join(' | ') || 'Ready for stock inward'}</td>
                                     </tr>
                                 ))}
                             </tbody>
