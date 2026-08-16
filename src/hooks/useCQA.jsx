@@ -620,12 +620,16 @@ export const CQAProvider = ({ children }) => {
 
             try {
                 for (const data of rows) {
-                    const inwardId = `INW-BLK-${Date.now()}-${rowNumber++}`;
-                    let batchId = data.batchNumber;
-                    if (!batchId) {
-                        batchId = `BAT-BLK-${Date.now()}-${rowNumber}`;
+                    const currentRow = rowNumber++;
+                    const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+                    const cleanLoc = (data.location || '').replace(/[^a-zA-Z0-9]/g, '');
+                    const inwardId = `INW-BLK-${Date.now()}-${currentRow}-${uniqueSuffix}`;
+                    
+                    let batchId;
+                    if (data.batchNumber && data.batchNumber.trim()) {
+                        batchId = `BAT-${data.batchNumber.trim()}-${cleanLoc}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     } else {
-                        batchId = `BAT-${batchId}-${Date.now()}`; // Ensure uniqueness per upload even if same batch number provided to avoid overwrite
+                        batchId = `BAT-BLK-${cleanLoc}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     }
                     
                     // 1. Create Inward Log / Movement Log

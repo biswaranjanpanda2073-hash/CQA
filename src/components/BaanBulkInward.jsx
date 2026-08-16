@@ -74,7 +74,16 @@ const BaanBulkInward = () => {
             return;
         }
 
-        const partNumSet = new Set();
+        const locationPartMap = new Set();
+        const partLocationsCount = {};
+        
+        data.forEach(row => {
+            const pNo = String(row['Part Number'] || '').trim().toUpperCase();
+            if (pNo) {
+                partLocationsCount[pNo] = (partLocationsCount[pNo] || 0) + 1;
+            }
+        });
+
         const validated = data.map((row, index) => {
             const partNo = String(row['Part Number'] || '').trim().toUpperCase();
             const partName = String(row['Part Name'] || '').trim();
@@ -84,9 +93,11 @@ const BaanBulkInward = () => {
             const invoice = String(row['Invoice/DC Number'] || '').trim();
             const minStock = Number(row['Minimum Stock Level']);
             const location = String(row['Location Selection'] || row['Location'] || '').trim();
+            const batchNumber = String(row['Batch Number'] || '').trim();
 
             const errors = [];
             const warnings = [];
+            const infoNotes = [];
 
             if (!partNo) errors.push('Part Number is missing.');
             if (!partName) errors.push('Part Name is missing.');
@@ -97,16 +108,18 @@ const BaanBulkInward = () => {
             if (isNaN(minStock) || minStock < 0) errors.push('Minimum Stock Level must be >= 0.');
             if (!location) errors.push('Location is missing.');
 
-            // Duplicate in file check
-            if (partNo) {
-                if (partNumSet.has(partNo)) {
-                    warnings.push('Duplicate Part Number in upload file.');
+            // Multi-location vs Duplicate Check
+            if (partNo && location) {
+                const locKey = `${partNo}::${location}::${batchNumber}`;
+                if (locationPartMap.has(locKey)) {
+                    warnings.push('Duplicate row for exact same SKU, location and batch.');
                 }
-                partNumSet.add(partNo);
-                
-                // Existing part check
-                if (existingParts[partNo]) {
-                    warnings.push('Existing Part Found (Stock will be added).');
+                locationPartMap.add(locKey);
+
+                if (partLocationsCount[partNo] > 1) {
+                    infoNotes.push(`Multi-location distribution (${location})`);
+                } else if (existingParts[partNo]) {
+                    infoNotes.push('Existing SKU in master (stock addition)');
                 }
             }
 
@@ -125,10 +138,10 @@ const BaanBulkInward = () => {
                 minStock,
                 location,
                 mpn: String(row['MPN'] || '').trim(),
-                batchNumber: String(row['Batch Number'] || '').trim(),
+                batchNumber,
                 remarks: String(row['Remarks'] || '').trim(),
                 status,
-                messages: [...errors, ...warnings]
+                messages: [...errors, ...warnings, ...infoNotes]
             };
         });
 
