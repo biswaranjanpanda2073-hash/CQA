@@ -598,13 +598,88 @@ export const CQAProvider = ({ children }) => {
         getAuditLogs: (id) => store.devices ? [] : [], // Placeholder
 
         // ─── BAAN MODULE OPERATIONS ───
-        createBaanLocation: async (loc) => {
-            const locId = loc.name.toUpperCase().replace(/\s+/g, '_');
-            await setDoc(doc(db, 'baan_locations', locId), { ...loc, id: locId, createdAt: new Date().toISOString() });
+        createBaanLocation: async (loc, user) => {
+            const locId = loc.id || loc.name.toUpperCase().replace(/\s+/g, '_');
+            await setDoc(doc(db, 'baan_locations', locId), { 
+                ...loc, 
+                id: locId, 
+                status: loc.status || 'Active',
+                createdBy: user?.name || user?.id || 'System',
+                createdAt: new Date().toISOString() 
+            });
             return { success: true };
         },
-        updateBaanLocation: async (id, data) => {
-            await setDoc(doc(db, 'baan_locations', id), data, { merge: true });
+        updateBaanLocation: async (id, data, user) => {
+            await setDoc(doc(db, 'baan_locations', id), {
+                ...data,
+                updatedBy: user?.name || user?.id || 'System',
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            return { success: true };
+        },
+        archiveBaanLocation: async (id, status, user) => {
+            await setDoc(doc(db, 'baan_locations', id), {
+                status: status || 'Archived',
+                updatedBy: user?.name || user?.id || 'System',
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            return { success: true };
+        },
+        deleteBaanLocation: async (id, locData) => {
+            const targetId = id;
+            const targetName = locData?.name;
+            const targetCode = locData?.code;
+            
+            const matchesLoc = (val) => {
+                if (!val) return false;
+                const s = String(val).trim().toUpperCase();
+                return (targetId && s === String(targetId).trim().toUpperCase()) ||
+                       (targetName && s === String(targetName).trim().toUpperCase()) ||
+                       (targetCode && s === String(targetCode).trim().toUpperCase());
+            };
+
+            // 1. Current Stock Check
+            let currentStock = 0;
+            Object.values(store.baan?.batches || {}).forEach(b => {
+                if (matchesLoc(b.location)) {
+                    currentStock += Number(b.quantityAvailable || 0);
+                }
+            });
+
+            if (currentStock > 0) {
+                return { 
+                    success: false, 
+                    message: `Deletion Blocked: Location has ${currentStock} active stock units. Stock must be zero before deletion.` 
+                };
+            }
+
+            // 2. Historical References Check across all BAAN collections
+            let refCount = 0;
+            Object.values(store.baan?.batches || {}).forEach(b => {
+                if (matchesLoc(b.location)) refCount++;
+            });
+            Object.values(store.baan?.inwardLogs || {}).forEach(l => {
+                if (matchesLoc(l.location)) refCount++;
+            });
+            Object.values(store.baan?.inventoryMovements || {}).forEach(m => {
+                if (matchesLoc(m.location) || matchesLoc(m.fromLocation) || matchesLoc(m.toLocation)) refCount++;
+            });
+            Object.values(store.baan?.partIssuance || {}).forEach(i => {
+                if (matchesLoc(i.location)) refCount++;
+            });
+            Object.values(store.baan?.partRequests || {}).forEach(r => {
+                if (matchesLoc(r.location)) refCount++;
+            });
+
+            if (refCount > 0) {
+                return { 
+                    success: false, 
+                    message: `Deletion Blocked: ${refCount} historical transaction records depend on this location. You can archive it instead to preserve traceability.` 
+                };
+            }
+
+            // 3. Delete document
+            await deleteDoc(doc(db, 'baan_locations', id));
             return { success: true };
         },
         bulkInwardBaanParts: async (rows, user) => {

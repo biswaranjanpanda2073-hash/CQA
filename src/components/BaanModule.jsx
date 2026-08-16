@@ -35,7 +35,13 @@ import {
     FileSpreadsheet,
     AlertCircle,
     Info,
-    ChevronDown
+    ChevronDown,
+    Edit2,
+    Trash2,
+    Archive,
+    ArchiveRestore,
+    Download,
+    Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCQA } from '../hooks/useCQA';
@@ -409,63 +415,257 @@ const BaanDashboard = ({ onNavigate }) => {
     );
 };
 
-const BaanLocations = () => {
-    const { store, createBaanLocation } = useCQA();
+const BaanLocations = ({ user }) => {
+    const { store, createBaanLocation, updateBaanLocation, archiveBaanLocation, deleteBaanLocation } = useCQA();
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState({ name: '', code: '', description: '' });
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, Active, Archived
+    
+    // Modal states
+    const [editingLoc, setEditingLoc] = useState(null);
+    const [editFormData, setEditFormData] = useState({ name: '', code: '', description: '' });
+    const [safetyModalLoc, setSafetyModalLoc] = useState(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [statusBanner, setStatusBanner] = useState(null); // { type: 'success'|'error', text: '' }
 
-    const locations = Object.values(store.baan?.locations || {});
+    const currentUser = user || JSON.parse(localStorage.getItem('cqa_user') || '{}');
+    const isAuthorizedAdmin = ['Admin', 'Supervisor', 'Store Manager'].includes(currentUser?.role);
+    const isSuperAdmin = currentUser?.role === 'Admin';
 
-    // Compute parts and total units per location
-    const locationStats = useMemo(() => {
-        const stats = {};
-        Object.values(store.baan?.batches || {}).forEach(b => {
-            if (!b.location) return;
-            if (!stats[b.location]) {
-                stats[b.location] = { uniqueParts: new Set(), totalUnits: 0 };
-            }
-            stats[b.location].uniqueParts.add(b.partNumber);
-            stats[b.location].totalUnits += Number(b.quantityAvailable || 0);
+    const rawLocations = Object.values(store.baan?.locations || {});
+
+    // Compute stock, SKUs, and historical reference count per location
+    const locationMetadata = useMemo(() => {
+        const meta = {};
+        rawLocations.forEach(loc => {
+            meta[loc.id] = {
+                uniqueParts: new Set(),
+                totalUnits: 0,
+                historicalRefCount: 0
+            };
         });
-        return stats;
-    }, [store.baan?.batches]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            const user = JSON.parse(localStorage.getItem('cqa_user') || '{}');
-            await createBaanLocation({ 
-                ...formData, 
-                createdBy: user.name || user.id || 'System' 
+        const matchesLoc = (loc, val) => {
+            if (!val) return false;
+            const s = String(val).trim().toUpperCase();
+            return (loc.id && s === String(loc.id).trim().toUpperCase()) ||
+                   (loc.name && s === String(loc.name).trim().toUpperCase()) ||
+                   (loc.code && s === String(loc.code).trim().toUpperCase());
+        };
+
+        // 1. Batches (current stock + batch history)
+        Object.values(store.baan?.batches || {}).forEach(b => {
+            rawLocations.forEach(loc => {
+                if (matchesLoc(loc, b.location)) {
+                    meta[loc.id].totalUnits += Number(b.quantityAvailable || 0);
+                    if (Number(b.quantityAvailable || 0) > 0) {
+                        meta[loc.id].uniqueParts.add(b.partNumber);
+                    }
+                    meta[loc.id].historicalRefCount++;
+                }
             });
-            setFormData({ name: '', code: '', description: '' });
-            setShowForm(false);
+        });
+
+        // 2. Inward Logs
+        Object.values(store.baan?.inwardLogs || {}).forEach(l => {
+            rawLocations.forEach(loc => {
+                if (matchesLoc(loc, l.location)) {
+                    meta[loc.id].historicalRefCount++;
+                }
+            });
+        });
+
+        // 3. Inventory Movements
+        Object.values(store.baan?.inventoryMovements || {}).forEach(m => {
+            rawLocations.forEach(loc => {
+                if (matchesLoc(loc, m.location) || matchesLoc(loc, m.fromLocation) || matchesLoc(loc, m.toLocation)) {
+                    meta[loc.id].historicalRefCount++;
+                }
+            });
+        });
+
+        // 4. Part Issuance
+        Object.values(store.baan?.partIssuance || {}).forEach(i => {
+            rawLocations.forEach(loc => {
+                if (matchesLoc(loc, i.location)) {
+                    meta[loc.id].historicalRefCount++;
+                }
+            });
+        });
+
+        // 5. Part Requests
+        Object.values(store.baan?.partRequests || {}).forEach(r => {
+            rawLocations.forEach(loc => {
+                if (matchesLoc(loc, r.location)) {
+                    meta[loc.id].historicalRefCount++;
+                }
+            });
+        });
+
+        return meta;
+    }, [rawLocations, store.baan]);
+
+    const filteredLocations = useMemo(() => {
+        return rawLocations.filter(loc => {
+            const locStatus = loc.status || 'Active';
+            if (statusFilter !== 'ALL' && locStatus !== statusFilter) return false;
+            if (searchTerm.trim()) {
+                const term = searchTerm.toLowerCase();
+                const matchName = loc.name && loc.name.toLowerCase().includes(term);
+                const matchCode = loc.code && loc.code.toLowerCase().includes(term);
+                const matchDesc = loc.description && loc.description.toLowerCase().includes(term);
+                if (!matchName && !matchCode && !matchDesc) return false;
+            }
+            return true;
+        }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }, [rawLocations, statusFilter, searchTerm]);
+
+    const handleCreate = async (e) => {
+        e.preventDefault();
+        setStatusBanner(null);
+        try {
+            const res = await createBaanLocation({ 
+                ...formData, 
+                status: 'Active' 
+            }, currentUser);
+            if (res.success) {
+                setFormData({ name: '', code: '', description: '' });
+                setShowForm(false);
+                setStatusBanner({ type: 'success', text: `Storage location '${formData.name}' created successfully.` });
+                setTimeout(() => setStatusBanner(null), 5000);
+            } else {
+                setStatusBanner({ type: 'error', text: res.message || 'Failed to create location.' });
+            }
         } catch (error) {
             console.error("Error creating location:", error);
-            alert("Failed to save location. Check your connection or try again.");
+            setStatusBanner({ type: 'error', text: 'Network error occurred while saving location.' });
+        }
+    };
+
+    const handleOpenEdit = (loc) => {
+        setEditingLoc(loc);
+        setEditFormData({
+            name: loc.name || '',
+            code: loc.code || '',
+            description: loc.description || ''
+        });
+    };
+
+    const handleSaveEdit = async (e) => {
+        e.preventDefault();
+        if (!editingLoc) return;
+        setIsProcessing(true);
+        setStatusBanner(null);
+        try {
+            const res = await updateBaanLocation(editingLoc.id, editFormData, currentUser);
+            if (res.success) {
+                setEditingLoc(null);
+                setStatusBanner({ type: 'success', text: `Location '${editFormData.name}' updated successfully.` });
+                setTimeout(() => setStatusBanner(null), 5000);
+            } else {
+                setStatusBanner({ type: 'error', text: res.message || 'Failed to update location.' });
+            }
+        } catch (error) {
+            console.error(error);
+            setStatusBanner({ type: 'error', text: 'Error updating location.' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleToggleArchive = async (loc) => {
+        const meta = locationMetadata[loc.id] || { totalUnits: 0 };
+        const isArchived = loc.status === 'Archived';
+        
+        // Safety Rule A: Cannot archive with active stock
+        if (!isArchived && meta.totalUnits > 0) {
+            alert(`Archiving Blocked: Location '${loc.name}' has ${meta.totalUnits} active units in stock. Transfer or issue all stock before archiving.`);
+            return;
+        }
+
+        setIsProcessing(true);
+        setStatusBanner(null);
+        try {
+            const nextStatus = isArchived ? 'Active' : 'Archived';
+            const res = await archiveBaanLocation(loc.id, nextStatus, currentUser);
+            if (res.success) {
+                setStatusBanner({ type: 'success', text: `Location '${loc.name}' is now ${nextStatus}.` });
+                setTimeout(() => setStatusBanner(null), 5000);
+            }
+        } catch (error) {
+            console.error(error);
+            setStatusBanner({ type: 'error', text: 'Error changing location status.' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleOpenDelete = (loc) => {
+        setSafetyModalLoc(loc);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!safetyModalLoc) return;
+        setIsProcessing(true);
+        setStatusBanner(null);
+        try {
+            const res = await deleteBaanLocation(safetyModalLoc.id, safetyModalLoc, currentUser);
+            if (res.success) {
+                setStatusBanner({ type: 'success', text: `Location '${safetyModalLoc.name}' permanently deleted.` });
+                setSafetyModalLoc(null);
+                setTimeout(() => setStatusBanner(null), 5000);
+            } else {
+                alert(res.message);
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Failed to delete location.');
+        } finally {
+            setIsProcessing(false);
         }
     };
 
     return (
         <div className="animate-fade-in">
-            <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
+            {/* Header */}
+            <div className="flex-between" style={{ marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
                     <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>Warehouse & Rack Locations</h2>
-                    <p className="baan-subtitle">Organize and track part bin storage across your production facility</p>
+                    <p className="baan-subtitle">Master storage locations, stock allocation, and audit safety management</p>
                 </div>
-                <button className="baan-btn primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <><X size={15} /> Close Form</> : <><PlusCircle size={15} /> Add New Location</>}
-                </button>
+                {isAuthorizedAdmin && (
+                    <button className="baan-btn primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <><X size={15} /> Close Form</> : <><PlusCircle size={15} /> Add New Location</>}
+                    </button>
+                )}
             </div>
 
+            {/* Status Banner */}
+            {statusBanner && (
+                <div className="baan-card" style={{ 
+                    padding: '0.75rem 1.25rem', 
+                    marginBottom: '1rem',
+                    borderLeft: `4px solid ${statusBanner.type === 'success' ? 'var(--baan-success)' : 'var(--baan-danger)'}`,
+                    background: statusBanner.type === 'success' ? 'var(--baan-success-bg)' : 'var(--baan-danger-bg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem'
+                }}>
+                    {statusBanner.type === 'success' ? <CheckCircle2 size={18} style={{ color: 'var(--baan-success)' }} /> : <AlertTriangle size={18} style={{ color: 'var(--baan-danger)' }} />}
+                    <span className="text-sm font-semibold">{statusBanner.text}</span>
+                </div>
+            )}
+
+            {/* Add Location Form */}
             {showForm && (
-                <div className="baan-card animate-fade-in">
+                <div className="baan-card animate-fade-in" style={{ marginBottom: '1.25rem' }}>
                     <div className="baan-card-header">
                         <div className="baan-card-title">
-                            <PlusCircle size={16} style={{ color: 'var(--baan-accent)' }} /> Add Storage Location
+                            <PlusCircle size={16} style={{ color: 'var(--baan-accent)' }} /> Add Storage Location Master
                         </div>
                     </div>
-                    <form className="baan-card-body" onSubmit={handleSubmit}>
+                    <form className="baan-card-body" onSubmit={handleCreate}>
                         <div className="grid md-grid-3 gap-4">
                             <div className="baan-input-group">
                                 <label>Location Name *</label>
@@ -480,15 +680,52 @@ const BaanLocations = () => {
                                 <input placeholder="e.g. SMD components storage" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
                             </div>
                         </div>
-                        <div className="flex-end" style={{ marginTop: '1rem' }}>
+                        <div className="flex-end" style={{ marginTop: '1rem', gap: '0.5rem' }}>
+                            <button type="button" className="baan-btn secondary" onClick={() => setShowForm(false)}>
+                                Cancel
+                            </button>
                             <button type="submit" className="baan-btn primary">
-                                <CheckCircle2 size={15} /> Save Location
+                                <CheckCircle2 size={15} /> Save Location Master
                             </button>
                         </div>
                     </form>
                 </div>
             )}
 
+            {/* Filters Bar */}
+            <div className="baan-card" style={{ padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+                <div className="flex-between" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: '240px' }}>
+                        <Search size={15} style={{ color: 'var(--baan-text-muted)' }} />
+                        <input 
+                            type="text"
+                            placeholder="Filter by Location Name, Code or Description..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="baan-input"
+                            style={{ height: '34px', fontSize: '0.85rem' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span className="text-xs text-muted font-bold">Status:</span>
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                            {['ALL', 'Active', 'Archived'].map(s => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => setStatusFilter(s)}
+                                    className={`baan-btn ${statusFilter === s ? 'primary' : 'secondary'}`}
+                                    style={{ height: '30px', padding: '0 0.75rem', fontSize: '0.75rem' }}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Locations Table */}
             <div className="baan-table-wrapper">
                 <table className="baan-table">
                     <thead>
@@ -496,42 +733,281 @@ const BaanLocations = () => {
                             <th>Location Name</th>
                             <th>Code</th>
                             <th>Description</th>
-                            <th className="num-col">Stored Parts</th>
-                            <th className="num-col">Total Units</th>
-                            <th>Created By</th>
-                            <th>Created Date</th>
+                            <th>Status</th>
+                            <th className="num-col">Current Stock</th>
+                            <th className="num-col">Stored SKUs</th>
+                            <th>Created / Updated</th>
+                            {isAuthorizedAdmin && <th style={{ textAlign: 'center' }}>Admin Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
-                        {locations.map(loc => {
-                            const stat = locationStats[loc.name] || { uniqueParts: new Set(), totalUnits: 0 };
+                        {filteredLocations.map(loc => {
+                            const meta = locationMetadata[loc.id] || { uniqueParts: new Set(), totalUnits: 0, historicalRefCount: 0 };
+                            const isArchived = loc.status === 'Archived';
                             return (
-                                <tr key={loc.id}>
+                                <tr key={loc.id} style={{ opacity: isArchived ? 0.75 : 1 }}>
                                     <td className="font-bold">
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                            <MapPin size={14} style={{ color: 'var(--baan-accent)' }} />
-                                            {loc.name}
+                                            <MapPin size={14} style={{ color: isArchived ? 'var(--baan-text-muted)' : 'var(--baan-accent)' }} />
+                                            <span>{loc.name}</span>
                                         </div>
                                     </td>
-                                    <td><span className="baan-badge neutral text-mono">{loc.code}</span></td>
-                                    <td className="text-muted">{loc.description || '—'}</td>
-                                    <td className="num-col font-bold">{stat.uniqueParts.size} SKUs</td>
-                                    <td className="num-col font-bold" style={{ color: 'var(--baan-accent)' }}>{stat.totalUnits.toLocaleString()}</td>
-                                    <td className="text-xs text-muted">{loc.createdBy}</td>
-                                    <td className="text-xs text-muted">{loc.createdAt ? new Date(loc.createdAt).toLocaleDateString() : '—'}</td>
+                                    <td><span className="baan-badge neutral text-mono">{loc.code || loc.id}</span></td>
+                                    <td className="text-muted text-xs">{loc.description || '—'}</td>
+                                    <td>
+                                        {isArchived ? (
+                                            <span className="baan-badge neutral">Archived</span>
+                                        ) : (
+                                            <span className="baan-badge success">Active</span>
+                                        )}
+                                    </td>
+                                    <td className="num-col font-bold" style={{ color: meta.totalUnits > 0 ? 'var(--baan-accent)' : 'inherit' }}>
+                                        {meta.totalUnits.toLocaleString()} Units
+                                    </td>
+                                    <td className="num-col font-bold">
+                                        {meta.uniqueParts.size} SKUs
+                                    </td>
+                                    <td className="text-xs text-muted">
+                                        {loc.updatedAt ? `Updated ${new Date(loc.updatedAt).toLocaleDateString()}` : loc.createdAt ? `Created ${new Date(loc.createdAt).toLocaleDateString()}` : '—'}
+                                    </td>
+                                    {isAuthorizedAdmin && (
+                                        <td style={{ textAlign: 'center' }}>
+                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                {/* Edit Button */}
+                                                <button 
+                                                    className="baan-btn secondary"
+                                                    style={{ padding: '4px 8px', height: '28px', fontSize: '0.75rem' }}
+                                                    onClick={() => handleOpenEdit(loc)}
+                                                    title="Edit Location Name and Details"
+                                                >
+                                                    <Edit2 size={12} /> Edit
+                                                </button>
+
+                                                {/* Archive / Reactivate Button */}
+                                                <button 
+                                                    className="baan-btn secondary"
+                                                    style={{ padding: '4px 8px', height: '28px', fontSize: '0.75rem' }}
+                                                    onClick={() => handleToggleArchive(loc)}
+                                                    title={isArchived ? "Reactivate Location" : "Archive Location (Only when stock is 0)"}
+                                                >
+                                                    {isArchived ? (
+                                                        <><ArchiveRestore size={12} /> Reactivate</>
+                                                    ) : (
+                                                        <><Archive size={12} /> Archive</>
+                                                    )}
+                                                </button>
+
+                                                {/* Permanent Delete Button (Admin Only) */}
+                                                {isSuperAdmin && (
+                                                    <button 
+                                                        className="baan-btn secondary"
+                                                        style={{ 
+                                                            padding: '4px 8px', 
+                                                            height: '28px', 
+                                                            fontSize: '0.75rem',
+                                                            color: 'var(--baan-danger)',
+                                                            borderColor: 'rgba(239, 68, 68, 0.3)'
+                                                        }}
+                                                        onClick={() => handleOpenDelete(loc)}
+                                                        title="Delete Location (Strict Safety Check)"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
-                        {locations.length === 0 && (
+                        {filteredLocations.length === 0 && (
                             <tr>
-                                <td colSpan="7" className="text-center text-muted py-6" style={{ textAlign: 'center' }}>
-                                    No warehouse locations configured yet. Click "Add New Location" to create one.
+                                <td colSpan={isAuthorizedAdmin ? 8 : 7} className="text-center text-muted py-6" style={{ textAlign: 'center' }}>
+                                    No warehouse locations match your search / filter criteria.
                                 </td>
                             </tr>
                         )}
                     </tbody>
                 </table>
             </div>
+
+            {/* Edit Location Modal */}
+            {editingLoc && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.65)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    padding: '1rem'
+                }}>
+                    <div className="baan-card animate-fade-in" style={{ width: '100%', maxWidth: '500px', margin: 0 }}>
+                        <div className="baan-card-header">
+                            <div className="baan-card-title">
+                                <Edit2 size={16} style={{ color: 'var(--baan-accent)' }} /> Edit Location Master
+                            </div>
+                            <button type="button" onClick={() => setEditingLoc(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--baan-text-muted)' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <form className="baan-card-body" onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div className="baan-input-group">
+                                <label>Location ID (Permanent Reference)</label>
+                                <input type="text" value={editingLoc.id} readOnly className="text-mono" style={{ background: 'var(--baan-surface-muted)', opacity: 0.8 }} />
+                            </div>
+                            <div className="baan-input-group">
+                                <label>Location Display Name *</label>
+                                <input 
+                                    required 
+                                    value={editFormData.name} 
+                                    onChange={e => setEditFormData({ ...editFormData, name: e.target.value })} 
+                                />
+                            </div>
+                            <div className="baan-input-group">
+                                <label>Location Code *</label>
+                                <input 
+                                    required 
+                                    value={editFormData.code} 
+                                    onChange={e => setEditFormData({ ...editFormData, code: e.target.value.toUpperCase() })} 
+                                />
+                            </div>
+                            <div className="baan-input-group">
+                                <label>Description</label>
+                                <textarea 
+                                    rows="2"
+                                    value={editFormData.description} 
+                                    onChange={e => setEditFormData({ ...editFormData, description: e.target.value })} 
+                                    className="baan-input"
+                                />
+                            </div>
+                            <div className="flex-end" style={{ gap: '0.5rem', marginTop: '0.5rem' }}>
+                                <button type="button" className="baan-btn secondary" onClick={() => setEditingLoc(null)}>
+                                    Cancel
+                                </button>
+                                <button type="submit" className="baan-btn primary" disabled={isProcessing}>
+                                    {isProcessing ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />} Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete / Archive Safety Confirmation Modal */}
+            {safetyModalLoc && (() => {
+                const meta = locationMetadata[safetyModalLoc.id] || { totalUnits: 0, historicalRefCount: 0 };
+                const hasStock = meta.totalUnits > 0;
+                const hasHistory = meta.historicalRefCount > 0;
+                const canPermanentlyDelete = !hasStock && !hasHistory;
+
+                return (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.7)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000,
+                        padding: '1rem'
+                    }}>
+                        <div className="baan-card animate-fade-in" style={{ width: '100%', maxWidth: '520px', margin: 0 }}>
+                            <div className="baan-card-header" style={{ borderBottomColor: canPermanentlyDelete ? 'rgba(239, 68, 68, 0.3)' : 'var(--baan-border)' }}>
+                                <div className="baan-card-title" style={{ color: canPermanentlyDelete ? 'var(--baan-danger)' : 'inherit' }}>
+                                    {canPermanentlyDelete ? <Trash2 size={16} style={{ color: 'var(--baan-danger)' }} /> : <AlertTriangle size={16} style={{ color: 'var(--baan-warning)' }} />}
+                                    {canPermanentlyDelete ? 'Permanent Location Deletion' : 'Delete Action Restricted'}
+                                </div>
+                                <button type="button" onClick={() => setSafetyModalLoc(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--baan-text-muted)' }}>
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div className="baan-card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div style={{ background: 'var(--baan-surface-muted)', padding: '0.85rem 1rem', borderRadius: '6px', fontSize: '0.85rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                        <span className="text-muted">Location Name:</span>
+                                        <span className="font-bold">{safetyModalLoc.name}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                        <span className="text-muted">Location Code / ID:</span>
+                                        <span className="font-bold text-mono">{safetyModalLoc.code || safetyModalLoc.id}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                        <span className="text-muted">Current Stock:</span>
+                                        <span className="font-bold" style={{ color: hasStock ? 'var(--baan-danger)' : 'var(--baan-success)' }}>
+                                            {meta.totalUnits} Units
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span className="text-muted">Historical References:</span>
+                                        <span className="font-bold" style={{ color: hasHistory ? 'var(--baan-warning)' : 'var(--baan-success)' }}>
+                                            {meta.historicalRefCount} Transactions / Records
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {hasStock ? (
+                                    <div style={{ color: 'var(--baan-danger)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                        <strong>⚠️ Deletion Blocked:</strong> This location currently holds <strong>{meta.totalUnits} units</strong> of stock. You must transfer or issue all stock before this location can be archived or deleted.
+                                    </div>
+                                ) : hasHistory ? (
+                                    <div style={{ fontSize: '0.85rem', lineHeight: '1.4', color: 'var(--baan-text-primary)' }}>
+                                        <p style={{ color: 'var(--baan-warning)', fontWeight: 600, marginBottom: '6px' }}>
+                                            ⚠️ Permanent Deletion Not Available
+                                        </p>
+                                        This location has <strong>{meta.historicalRefCount} historical transactions</strong> (inward receipts, issuances, or movements) associated with it. To protect historical auditability, permanent deletion is prevented.
+                                        <p style={{ marginTop: '8px', color: 'var(--baan-text-muted)' }}>
+                                            Instead, you can <strong>Archive</strong> this location to prevent new transactions while preserving full historical reporting.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                        This location has <strong>0 current stock</strong> and <strong>0 historical references</strong>. It is completely safe to delete permanently.
+                                    </div>
+                                )}
+
+                                <div className="flex-end" style={{ gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    <button type="button" className="baan-btn secondary" onClick={() => setSafetyModalLoc(null)}>
+                                        Close
+                                    </button>
+
+                                    {!hasStock && hasHistory && safetyModalLoc.status !== 'Archived' && (
+                                        <button 
+                                            type="button" 
+                                            className="baan-btn primary"
+                                            onClick={() => {
+                                                handleToggleArchive(safetyModalLoc);
+                                                setSafetyModalLoc(null);
+                                            }}
+                                        >
+                                            <Archive size={14} /> Archive Location
+                                        </button>
+                                    )}
+
+                                    {canPermanentlyDelete && (
+                                        <button 
+                                            type="button" 
+                                            className="baan-btn"
+                                            style={{ background: 'var(--baan-danger)', color: '#fff', border: 'none' }}
+                                            onClick={handleConfirmDelete}
+                                            disabled={isProcessing}
+                                        >
+                                            {isProcessing ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />} Delete Permanently
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };
@@ -672,7 +1148,7 @@ const BaanManualInward = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [statusBanner, setStatusBanner] = useState(null);
 
-    const locations = Object.values(store.baan?.locations || {});
+    const locations = Object.values(store.baan?.locations || {}).filter(l => l.status !== 'Archived' && l.status !== 'Inactive');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -2069,6 +2545,19 @@ const BaanAnalytics = () => {
         return { totalUnits, totalVal, totalIssued };
     }, [baan]);
 
+    const locationStats = useMemo(() => {
+        const stats = {};
+        Object.values(baan.batches || {}).forEach(b => {
+            if (!b.location) return;
+            if (!stats[b.location]) {
+                stats[b.location] = { uniqueParts: new Set(), totalUnits: 0 };
+            }
+            stats[b.location].uniqueParts.add(b.partNumber);
+            stats[b.location].totalUnits += Number(b.quantityAvailable || 0);
+        });
+        return stats;
+    }, [baan.batches]);
+
     const consumptionByIssue = useMemo(() => {
         const counts = {};
         Object.values(baan.partRequests || {})
@@ -2088,6 +2577,302 @@ const BaanAnalytics = () => {
         });
         return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
     }, [baan.partIssuance]);
+
+    // ─── MASTER DATA EXPORT (9-Sheet Excel Workbook) ───
+    const handleMasterExport = () => {
+        const pad = (n) => String(n).padStart(2, '0');
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+        const filename = `BAAN_Master_Data_${dateStr}`;
+
+        // Helper to compute auto-fitted column widths
+        const setColWidths = (data, minWidth = 14) => {
+            if (!data || data.length === 0) return [];
+            const keys = Object.keys(data[0]);
+            return keys.map(key => {
+                let maxLen = key.length;
+                data.forEach(row => {
+                    const val = row[key];
+                    if (val !== null && val !== undefined) {
+                        const len = String(val).length;
+                        if (len > maxLen) maxLen = len;
+                    }
+                });
+                return { wch: Math.min(Math.max(maxLen + 3, minWidth), 45) };
+            });
+        };
+
+        const wb = XLSX.utils.book_new();
+
+        const addSheet = (data, sheetName) => {
+            const ws = XLSX.utils.json_to_sheet(data.length > 0 ? data : [{ 'Status': 'No records available in database' }]);
+            if (data.length > 0) {
+                ws['!cols'] = setColWidths(data);
+            }
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        };
+
+        // 1. Sheet 1: Current Inventory & Batch Snapshot
+        const batches = Object.values(baan.batches || {}).sort((a, b) => (a.partNumber || '').localeCompare(b.partNumber || ''));
+        const sheet1Data = batches.map(b => {
+            const avail = Number(b.quantityAvailable || 0);
+            const cost = Number(b.perUnitCost || 0);
+            const minStock = Number(b.minimumStockLevel || baan.parts?.[b.partNumber]?.minimumStockLevel || 10);
+            return {
+                'Part Number': b.partNumber || '—',
+                'Part Name': b.partName || baan.parts?.[b.partNumber]?.name || '—',
+                'MPN': b.mpn || baan.parts?.[b.partNumber]?.mpn || '—',
+                'Batch ID': b.id || b.batchNumber || '—',
+                'Batch Number': b.batchNumber || b.id || '—',
+                'Location': b.location || '—',
+                'Available Quantity': avail,
+                'Total Inward Quantity': Number(b.quantityTotal || avail),
+                'UOM': b.uom || baan.parts?.[b.partNumber]?.uom || 'Nos',
+                'Per Unit Cost (INR)': cost,
+                'Batch Valuation (INR)': Number((avail * cost).toFixed(2)),
+                'Minimum Stock Level': minStock,
+                'Stock Status': avail === 0 ? 'Out of Stock' : avail <= minStock ? 'Low Stock' : 'In Stock',
+                'Inward Date': b.inwardDate ? new Date(b.inwardDate).toLocaleString() : '—',
+                'Invoice/DC Reference': b.reference || '—',
+                'Remarks': b.remarks || '—'
+            };
+        });
+        addSheet(sheet1Data, 'Current Inventory & Batches');
+
+        // 2. Sheet 2: Inward Stock Receipts
+        const inwardLogs = Object.values(baan.inwardLogs || {}).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const sheet2Data = inwardLogs.map(l => {
+            const qty = Number(l.quantity || 0);
+            const cost = Number(l.perUnitCost || baan.batches?.[l.batchId]?.perUnitCost || 0);
+            return {
+                'Inward ID': l.id || '—',
+                'Inward Date': l.timestamp ? new Date(l.timestamp).toLocaleString() : '—',
+                'Part Number': l.partNumber || '—',
+                'Part Name': l.partName || baan.parts?.[l.partNumber]?.name || '—',
+                'MPN': l.mpn || baan.parts?.[l.partNumber]?.mpn || '—',
+                'Batch ID': l.batchId || '—',
+                'Location': l.location || '—',
+                'Quantity Inwarded': qty,
+                'UOM': l.uom || baan.parts?.[l.partNumber]?.uom || 'Nos',
+                'Per Unit Cost (INR)': cost,
+                'Total Amount (INR)': Number((qty * cost).toFixed(2)),
+                'Invoice/DC Number': l.reference || '—',
+                'Inwarded By': l.inwardBy || '—',
+                'Remarks': l.remarks || '—'
+            };
+        });
+        addSheet(sheet2Data, 'Inward Receipts');
+
+        // 3. Sheet 3: Part Requests
+        const partRequests = Object.values(baan.partRequests || {}).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+        const sheet3Data = partRequests.map(r => {
+            const reqQty = Number(r.requestedQty || r.quantityRequested || 0);
+            const consQty = Number(r.consumedQty || 0);
+            const retQty = Number(r.returnedQty || 0);
+            const remQty = r.remainingQty !== undefined ? Number(r.remainingQty) : Math.max(0, reqQty - consQty - retQty);
+            return {
+                'Request ID': r.id || '—',
+                'Request Date': r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '—',
+                'Device Serial Number': r.deviceSn || '—',
+                'Issue Category': r.issueCategory || 'General Rework',
+                'Part Number': r.partNo || r.partNumber || '—',
+                'Part Name': r.partName || baan.parts?.[r.partNo || r.partNumber]?.name || '—',
+                'Quantity Requested': reqQty,
+                'Consumed Quantity': consQty,
+                'Returned Quantity': retQty,
+                'Remaining Quantity': remQty,
+                'Request Status': r.status || '—',
+                'Requested By': r.requestedBy || '—',
+                'Issued Date': r.issuedAt ? new Date(r.issuedAt).toLocaleString() : '—',
+                'Issued By': r.issuedBy || '—',
+                'Closed Date': r.closedManuallyAt ? new Date(r.closedManuallyAt).toLocaleString() : '—',
+                'Closed By': r.closedManuallyBy || '—',
+                'Remarks': r.remarks || '—'
+            };
+        });
+        addSheet(sheet3Data, 'Part Requests');
+
+        // 4. Sheet 4: Issuance Logs (Explicit Issuances + Merged Request Issuances)
+        const explicitIssuances = Object.values(baan.partIssuance || {}).map(i => ({
+            ...i,
+            requestedAt: i.requestedAt || baan.partRequests?.[i.requestId]?.requestedAt || '',
+            partName: i.partName || baan.partRequests?.[i.requestId]?.partName || baan.parts?.[i.partNumber]?.name || '—',
+            requestedBy: i.requestedBy || baan.partRequests?.[i.requestId]?.requestedBy || '—',
+            deviceSn: i.deviceSn || baan.partRequests?.[i.requestId]?.deviceSn || '—'
+        }));
+        const requestIssuances = Object.values(baan.partRequests || {})
+            .filter(r => r.issuedAt && !explicitIssuances.some(i => i.requestId === r.id))
+            .map(r => ({
+                id: `ISS-${r.id}`,
+                requestId: r.id,
+                requestedAt: r.requestedAt || '',
+                issuedAt: r.issuedAt,
+                deviceSn: r.deviceSn || '—',
+                partNumber: r.partNo || r.partNumber,
+                partName: r.partName || baan.parts?.[r.partNo || r.partNumber]?.name || '—',
+                requestedBy: r.requestedBy || '—',
+                batchId: 'Standard FIFO',
+                location: r.location || 'Warehouse',
+                quantity: Number(r.requestedQty || r.quantityRequested || 0),
+                uom: baan.parts?.[r.partNo || r.partNumber]?.uom || 'Nos',
+                issuedBy: r.issuedBy || 'Store Operator'
+            }));
+        const allIssuances = [...explicitIssuances, ...requestIssuances].sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt));
+        const sheet4Data = allIssuances.map(i => ({
+            'Issuance ID': i.id || '—',
+            'Request ID': i.requestId || '—',
+            'Issued Date': i.issuedAt ? new Date(i.issuedAt).toLocaleString() : '—',
+            'Request Date': i.requestedAt ? new Date(i.requestedAt).toLocaleString() : '—',
+            'Device Serial Number': i.deviceSn || '—',
+            'Part Number': i.partNumber || '—',
+            'Part Name': i.partName || '—',
+            'Batch ID': i.batchId || '—',
+            'Location': i.location || '—',
+            'Quantity Issued': Number(i.quantity || 0),
+            'UOM': i.uom || baan.parts?.[i.partNumber]?.uom || 'Nos',
+            'Requested By': i.requestedBy || '—',
+            'Issued By': i.issuedBy || '—',
+            'Status': 'Issued'
+        }));
+        addSheet(sheet4Data, 'Issuance Logs');
+
+        // 5. Sheet 5: Consumption
+        const consumptionMovements = Object.values(baan.inventoryMovements || {})
+            .filter(m => (m.movementType || m.type) === 'CONSUMPTION' || m.qtyConsumed > 0);
+        const reqConsumptions = Object.values(baan.partRequests || {})
+            .filter(r => Number(r.consumedQty || 0) > 0 && !consumptionMovements.some(m => m.requestId === r.id))
+            .map(r => ({
+                id: `CON-${r.id}`,
+                requestId: r.id,
+                timestamp: r.closedManuallyAt || r.issuedAt || r.requestedAt,
+                deviceSn: r.deviceSn || '—',
+                partNumber: r.partNo || r.partNumber,
+                quantity: Number(r.consumedQty || 0),
+                user: r.closedManuallyBy || r.requestedBy || 'Rework Technician',
+                reason: r.issueCategory || 'Part Consumed during rework'
+            }));
+        const allConsumptions = [...consumptionMovements, ...reqConsumptions].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const sheet5Data = allConsumptions.map(c => ({
+            'Movement / Log ID': c.id || '—',
+            'Request ID': c.requestId || '—',
+            'Consumption Date': c.timestamp ? new Date(c.timestamp).toLocaleString() : '—',
+            'Device Serial Number': c.deviceSn || '—',
+            'Part Number': c.partNumber || c.partNo || '—',
+            'Part Name': baan.parts?.[c.partNumber || c.partNo]?.name || baan.partRequests?.[c.requestId]?.partName || '—',
+            'Quantity Consumed': Number(c.quantity || c.qtyConsumed || 0),
+            'UOM': c.uom || baan.parts?.[c.partNumber || c.partNo]?.uom || 'Nos',
+            'Consumed By': c.user || c.consumedBy || '—',
+            'Reason / Remarks': c.reason || c.remarks || 'Part Consumed in production/rework'
+        }));
+        addSheet(sheet5Data, 'Consumption');
+
+        // 6. Sheet 6: Reverse & Returns
+        const returnMovements = Object.values(baan.inventoryMovements || {})
+            .filter(m => (m.movementType || m.type) === 'RETURN' || m.qtyReturned > 0);
+        const reqReturns = Object.values(baan.partRequests || {})
+            .filter(r => Number(r.returnedQty || 0) > 0 && !returnMovements.some(m => m.requestId === r.id))
+            .map(r => ({
+                id: `RET-${r.id}`,
+                requestId: r.id,
+                timestamp: r.closedManuallyAt || r.issuedAt || r.requestedAt,
+                deviceSn: r.deviceSn || '—',
+                partNumber: r.partNo || r.partNumber,
+                quantity: Number(r.returnedQty || 0),
+                location: r.location || 'Warehouse',
+                user: r.closedManuallyBy || r.requestedBy || 'Rework Technician',
+                reason: 'Unused part returned to inventory'
+            }));
+        const allReturns = [...returnMovements, ...reqReturns].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const sheet6Data = allReturns.map(r => ({
+            'Return ID': r.id || '—',
+            'Request ID': r.requestId || '—',
+            'Return Date': r.timestamp ? new Date(r.timestamp).toLocaleString() : '—',
+            'Device Serial Number': r.deviceSn || '—',
+            'Part Number': r.partNumber || r.partNo || '—',
+            'Part Name': baan.parts?.[r.partNumber || r.partNo]?.name || baan.partRequests?.[r.requestId]?.partName || '—',
+            'Batch ID': r.batchId || r.batchNumber || '—',
+            'Quantity Returned': Number(r.quantity || r.qtyReturned || 0),
+            'UOM': r.uom || baan.parts?.[r.partNumber || r.partNo]?.uom || 'Nos',
+            'Return To Location': r.location || '—',
+            'Returned By': r.user || r.returnedBy || '—',
+            'Reason / Remarks': r.reason || r.returnReason || r.remarks || '—',
+            'Status': 'Returned to Stock'
+        }));
+        addSheet(sheet6Data, 'Reverse & Returns');
+
+        // 7. Sheet 7: Inventory Movements
+        const movements = Object.values(baan.inventoryMovements || {}).sort((a, b) => new Date(b.timestamp || b.uploadedAt || 0) - new Date(a.timestamp || a.uploadedAt || 0));
+        const sheet7Data = movements.map(m => {
+            const qty = Number(m.quantity || m.qtyAdded || m.qtyReturned || 0);
+            const cost = Number(m.perUnitCost || baan.batches?.[m.batchId]?.perUnitCost || 0);
+            return {
+                'Movement ID': m.id || '—',
+                'Movement Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString() : '—',
+                'Movement Type': m.movementType || m.type || '—',
+                'Part Number': m.partNumber || m.partNo || '—',
+                'Part Name': baan.parts?.[m.partNumber || m.partNo]?.name || '—',
+                'Batch ID / No': m.batchNumber || m.batchId || '—',
+                'Quantity': qty,
+                'Per Unit Cost (INR)': cost,
+                'Total Value (INR)': Number((qty * cost).toFixed(2)),
+                'Location / Ref': m.location || m.fromLocation || m.toLocation || '—',
+                'Invoice/DC Number': m.invoiceOrDcNumber || '—',
+                'Request ID': m.requestId || '—',
+                'Device Serial Number': m.deviceSn || '—',
+                'Performed By': m.user || m.uploadedBy || m.returnedBy || '—',
+                'Remarks / Reason': m.reason || m.returnReason || m.remarks || '—'
+            };
+        });
+        addSheet(sheet7Data, 'Inventory Movements');
+
+        // 8. Sheet 8: Locations Master
+        const locations = Object.values(baan.locations || {}).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const sheet8Data = locations.map(loc => {
+            const stat = locationStats[loc.name] || locationStats[loc.id] || { uniqueParts: new Set(), totalUnits: 0 };
+            return {
+                'Location ID': loc.id || '—',
+                'Location Name': loc.name || '—',
+                'Location Code': loc.code || '—',
+                'Description': loc.description || '—',
+                'Status': loc.status || 'Active',
+                'Current Stock Units': stat.totalUnits || 0,
+                'Stored SKU Count': stat.uniqueParts ? stat.uniqueParts.size : 0,
+                'Created By': loc.createdBy || 'System',
+                'Created Date': loc.createdAt ? new Date(loc.createdAt).toLocaleString() : '—',
+                'Updated Date': loc.updatedAt ? new Date(loc.updatedAt).toLocaleString() : '—'
+            };
+        });
+        addSheet(sheet8Data, 'Locations Master');
+
+        // 9. Sheet 9: Part Master
+        const parts = Object.values(baan.parts || {}).sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+        const sheet9Data = parts.map(p => {
+            let totalStock = 0;
+            let totalVal = 0;
+            Object.values(baan.batches || {}).forEach(b => {
+                if (b.partNumber === p.id) {
+                    const q = Number(b.quantityAvailable || 0);
+                    totalStock += q;
+                    totalVal += (q * Number(b.perUnitCost || 0));
+                }
+            });
+            const minStock = Number(p.minimumStockLevel || 10);
+            return {
+                'Internal Part Number': p.id || '—',
+                'Part Name': p.name || '—',
+                'MPN': p.mpn || '—',
+                'UOM': p.uom || 'Nos',
+                'Minimum Stock Level': minStock,
+                'Total Available Stock': totalStock,
+                'Total Stock Valuation (INR)': Number(totalVal.toFixed(2)),
+                'Stock Status': totalStock === 0 ? 'Out of Stock' : totalStock <= minStock ? 'Low Stock' : 'Adequate Stock',
+                'Last Updated Date': (p.lastUpdated || p.lastInward) ? new Date(p.lastUpdated || p.lastInward).toLocaleString() : '—'
+            };
+        });
+        addSheet(sheet9Data, 'Part Master');
+
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+    };
 
     const handleExport = (type) => {
         let data = [];
@@ -2162,21 +2947,59 @@ const BaanAnalytics = () => {
 
     return (
         <div className="animate-fade-in">
+            {/* Header with Master Data Export Button */}
             <div className="flex-between" style={{ marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
-                    <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>BAAN Analytics & Excel Exports</h2>
-                    <p className="baan-subtitle">Material consumption trends, part turnover, and data exports</p>
+                    <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>BAAN Analytics & Master Data Exports</h2>
+                    <p className="baan-subtitle">Material consumption trends, part turnover, and full lifecycle data exports</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button 
+                        className="baan-btn primary" 
+                        onClick={handleMasterExport}
+                        style={{ background: 'var(--baan-accent)', color: '#fff', fontWeight: 600 }}
+                    >
+                        <Download size={15} /> Export Master Data (.xlsx)
+                    </button>
                     <button className="baan-btn secondary" onClick={() => handleExport('Inventory')}>
-                        <FileSpreadsheet size={15} /> Export Inventory (.xlsx)
+                        <FileSpreadsheet size={15} /> Export Inventory
                     </button>
                     <button className="baan-btn secondary" onClick={() => handleExport('Movements')}>
-                        <FileSpreadsheet size={15} /> Export Movements (.xlsx)
+                        <FileSpreadsheet size={15} /> Export Movements
                     </button>
                     <button className="baan-btn secondary" onClick={() => handleExport('Requests')}>
-                        <FileSpreadsheet size={15} /> Export Requests (.xlsx)
+                        <FileSpreadsheet size={15} /> Export Requests
                     </button>
+                </div>
+            </div>
+
+            {/* Master Data Export Card Banner */}
+            <div className="baan-card" style={{ 
+                marginBottom: '1.25rem', 
+                borderLeft: '4px solid var(--baan-accent)',
+                background: 'var(--baan-surface)'
+            }}>
+                <div className="baan-card-body" style={{ padding: '1rem 1.25rem' }}>
+                    <div className="flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                                <FileSpreadsheet size={18} style={{ color: 'var(--baan-accent)' }} />
+                                <h3 className="font-bold text-sm" style={{ margin: 0, color: 'var(--baan-text-primary)' }}>
+                                    Enterprise Master Data & Lifecycle Audit Package
+                                </h3>
+                            </div>
+                            <p className="text-xs text-muted" style={{ margin: 0, maxWidth: '680px' }}>
+                                Exports a complete 9-sheet Excel workbook containing: <strong>Current Inventory & Batches</strong>, <strong>Inward Receipts</strong>, <strong>Part Requests</strong>, <strong>Issuance Logs</strong>, <strong>Consumption</strong>, <strong>Reverse & Returns</strong>, <strong>Inventory Movements</strong>, <strong>Locations Master</strong>, and <strong>Part Master</strong>.
+                            </p>
+                        </div>
+                        <button 
+                            className="baan-btn primary" 
+                            onClick={handleMasterExport}
+                            style={{ height: '38px', padding: '0 1.25rem' }}
+                        >
+                            <Download size={15} /> Export Complete Master Package (.xlsx)
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -2426,7 +3249,7 @@ const BaanModule = ({ user }) => {
     const renderView = () => {
         switch (view) {
             case 'dashboard': return <BaanDashboard onNavigate={navigate} />;
-            case 'locations': return <BaanLocations />;
+            case 'locations': return <BaanLocations user={user} />;
             case 'inventory': return <BaanInventory />;
             case 'inward': return <BaanInward />;
             case 'request': return <BaanRequest />;
@@ -2434,7 +3257,7 @@ const BaanModule = ({ user }) => {
             case 'issuance': return <BaanIssuance initialRequestId={viewProps.requestId} />;
             case 'issuance_history': return <BaanIssuanceHistory />;
             case 'reverse': return <BaanReverseInventory />;
-            case 'analytics': return <BaanAnalytics />;
+            case 'analytics': return <BaanAnalytics user={user} />;
             default: return <BaanDashboard onNavigate={navigate} />;
         }
     };
