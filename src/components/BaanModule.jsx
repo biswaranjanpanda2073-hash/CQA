@@ -34,7 +34,8 @@ import {
     Layers,
     FileSpreadsheet,
     AlertCircle,
-    Info
+    Info,
+    ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCQA } from '../hooks/useCQA';
@@ -535,6 +536,89 @@ const BaanLocations = () => {
     );
 };
 
+const BaanInwardHistory = () => {
+    const { store } = useCQA();
+    const [searchTerm, setSearchTerm] = useState('');
+    const inwardLogs = useMemo(() => {
+        return Object.values(store.baan?.inwardLogs || {})
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    }, [store.baan?.inwardLogs]);
+
+    const filteredLogs = useMemo(() => {
+        if (!searchTerm.trim()) return inwardLogs;
+        const term = searchTerm.toLowerCase();
+        return inwardLogs.filter(log => 
+            (log.partNumber && log.partNumber.toLowerCase().includes(term)) ||
+            (log.partName && log.partName.toLowerCase().includes(term)) ||
+            (log.batchId && log.batchId.toLowerCase().includes(term)) ||
+            (log.location && log.location.toLowerCase().includes(term)) ||
+            (log.reference && log.reference.toLowerCase().includes(term)) ||
+            (log.inwardBy && log.inwardBy.toLowerCase().includes(term))
+        );
+    }, [inwardLogs, searchTerm]);
+
+    return (
+        <div className="baan-card">
+            <div className="baan-card-header">
+                <div className="baan-card-title">
+                    <History size={16} style={{ color: 'var(--baan-accent)' }} />
+                    Inward Stock Audit Logs ({filteredLogs.length})
+                </div>
+                <div style={{ position: 'relative', width: '260px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--baan-text-muted)' }} />
+                    <input 
+                        type="text"
+                        placeholder="Search inward logs..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="baan-input"
+                        style={{ paddingLeft: '2rem', height: '32px', fontSize: '0.8rem' }}
+                    />
+                </div>
+            </div>
+            <div className="baan-table-wrapper" style={{ border: 'none' }}>
+                <table className="baan-table">
+                    <thead>
+                        <tr>
+                            <th>Inward Date</th>
+                            <th>Part Number</th>
+                            <th>Part Description</th>
+                            <th className="num-col">Qty Inwarded</th>
+                            <th>Location</th>
+                            <th>Batch ID</th>
+                            <th>Invoice / Ref</th>
+                            <th>Inward By</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredLogs.map(log => (
+                            <tr key={log.id}>
+                                <td className="text-xs text-muted">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
+                                <td className="font-bold text-mono" style={{ color: 'var(--baan-accent)' }}>{log.partNumber}</td>
+                                <td className="font-semibold">{log.partName}</td>
+                                <td className="num-col font-bold">{log.quantity}</td>
+                                <td><span className="baan-badge neutral">📍 {log.location}</span></td>
+                                <td className="text-xs text-mono">{log.batchId}</td>
+                                <td className="text-xs">{log.reference || '—'}</td>
+                                <td><span className="baan-badge neutral">👤 {log.inwardBy}</span></td>
+                                <td className="text-xs text-muted">{log.remarks || '—'}</td>
+                            </tr>
+                        ))}
+                        {filteredLogs.length === 0 && (
+                            <tr>
+                                <td colSpan="9" className="text-center text-muted py-6" style={{ textAlign: 'center' }}>
+                                    No inward records found.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const BaanInward = () => {
     const [activeTab, setActiveTab] = useState('manual');
 
@@ -554,10 +638,17 @@ const BaanInward = () => {
                 >
                     <FileSpreadsheet size={15} /> Bulk Upload (Excel / CSV)
                 </button>
+                <button 
+                    className={`baan-btn ${activeTab === 'logs' ? 'primary' : 'secondary'}`}
+                    onClick={() => setActiveTab('logs')}
+                >
+                    <History size={15} /> Inward Logs & History
+                </button>
             </div>
 
             {activeTab === 'manual' && <BaanManualInward />}
             {activeTab === 'bulk' && <BaanBulkInward />}
+            {activeTab === 'logs' && <BaanInwardHistory />}
         </div>
     );
 };
@@ -747,6 +838,207 @@ const BaanManualInward = () => {
     );
 };
 
+const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Search or Select Component SKU --" }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = React.useRef(null);
+    const searchInputRef = React.useRef(null);
+
+    const selectedPart = useMemo(() => {
+        return parts.find(p => p.id === value);
+    }, [parts, value]);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filteredParts = useMemo(() => {
+        if (!searchTerm.trim()) return parts;
+        const term = searchTerm.toLowerCase();
+        return parts.filter(p => 
+            (p.id && p.id.toLowerCase().includes(term)) ||
+            (p.name && p.name.toLowerCase().includes(term)) ||
+            (p.mpn && p.mpn.toLowerCase().includes(term))
+        );
+    }, [parts, searchTerm]);
+
+    const handleSelect = (partId) => {
+        onChange(partId);
+        setIsOpen(false);
+        setSearchTerm('');
+    };
+
+    const handleClear = (e) => {
+        e.stopPropagation();
+        onChange('');
+        setSearchTerm('');
+    };
+
+    const toggleOpen = () => {
+        const nextState = !isOpen;
+        setIsOpen(nextState);
+        if (nextState) {
+            setTimeout(() => {
+                if (searchInputRef.current) {
+                    searchInputRef.current.focus();
+                }
+            }, 50);
+        }
+    };
+
+    return (
+        <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
+            <div 
+                onClick={toggleOpen}
+                className="baan-input"
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    minHeight: '42px',
+                    borderColor: isOpen ? 'var(--baan-accent)' : undefined,
+                    boxShadow: isOpen ? '0 0 0 2px var(--baan-accent-alpha)' : undefined,
+                    background: 'var(--baan-surface)'
+                }}
+            >
+                {selectedPart ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', overflow: 'hidden' }}>
+                        <span className="font-bold text-mono" style={{ color: 'var(--baan-accent)', fontSize: '0.875rem' }}>
+                            {selectedPart.id}
+                        </span>
+                        <span style={{ color: 'var(--baan-text-muted)', fontSize: '0.8rem' }}>—</span>
+                        <span className="font-semibold" style={{ color: 'var(--baan-text-primary)', fontSize: '0.875rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {selectedPart.name}
+                        </span>
+                    </div>
+                ) : (
+                    <span style={{ color: 'var(--baan-text-muted)', fontSize: '0.875rem' }}>
+                        {placeholder}
+                    </span>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {selectedPart && (
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--baan-text-muted)',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}
+                            title="Clear selection"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                    <ChevronDown size={15} style={{ color: 'var(--baan-text-muted)', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                </div>
+            </div>
+
+            {isOpen && (
+                <div 
+                    style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 4px)',
+                        left: 0,
+                        right: 0,
+                        zIndex: 50,
+                        background: 'var(--baan-surface)',
+                        border: '1px solid var(--baan-border)',
+                        borderRadius: 'var(--baan-radius-md, 8px)',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                        overflow: 'hidden'
+                    }}
+                >
+                    <div style={{ padding: '0.5rem', borderBottom: '1px solid var(--baan-border)', background: 'var(--baan-surface-muted)' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--baan-text-muted)' }} />
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                placeholder="Search by Part Number or Name..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                onClick={e => e.stopPropagation()}
+                                className="baan-input"
+                                style={{
+                                    paddingLeft: '2rem',
+                                    height: '36px',
+                                    fontSize: '0.85rem',
+                                    background: 'var(--baan-surface)'
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                        {filteredParts.map(part => {
+                            const isSelected = part.id === value;
+                            return (
+                                <div
+                                    key={part.id}
+                                    onClick={() => handleSelect(part.id)}
+                                    style={{
+                                        padding: '0.6rem 0.85rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        background: isSelected ? 'var(--baan-accent-alpha)' : 'transparent',
+                                        borderLeft: isSelected ? '3px solid var(--baan-accent)' : '3px solid transparent',
+                                        transition: 'background 0.1s ease'
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!isSelected) e.currentTarget.style.background = 'var(--baan-table-row-hover)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!isSelected) e.currentTarget.style.background = 'transparent';
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span className="font-bold text-mono" style={{ color: 'var(--baan-accent)', fontSize: '0.85rem' }}>
+                                                {part.id}
+                                            </span>
+                                            {part.uom && (
+                                                <span className="text-xs text-muted">({part.uom})</span>
+                                            )}
+                                        </div>
+                                        <span className="font-semibold text-xs" style={{ color: 'var(--baan-text-primary)' }}>
+                                            {part.name}
+                                        </span>
+                                    </div>
+                                    {isSelected && (
+                                        <CheckCircle2 size={14} style={{ color: 'var(--baan-accent)' }} />
+                                    )}
+                                </div>
+                            );
+                        })}
+
+                        {filteredParts.length === 0 && (
+                            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--baan-text-muted)', fontSize: '0.8rem' }}>
+                                No component SKU matching "{searchTerm}"
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const BaanRequest = () => {
     const { store, requestBaanPart } = useCQA();
     const [partNumber, setPartNumber] = useState('');
@@ -864,16 +1156,12 @@ const BaanRequest = () => {
                 <form className="baan-card-body" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div className="baan-input-group">
                         <label>Select Part Number *</label>
-                        <select 
+                        <BaanSearchablePartSelect 
+                            parts={availableParts}
                             value={partNumber}
-                            onChange={(e) => setPartNumber(e.target.value)}
-                            required
-                        >
-                            <option value="">-- Choose Component SKU --</option>
-                            {availableParts.map(part => (
-                                <option key={part.id} value={part.id}>{part.id} — {part.name}</option>
-                            ))}
-                        </select>
+                            onChange={setPartNumber}
+                            placeholder="-- Search Part Number or Name --"
+                        />
                     </div>
 
                     <div className="grid md-grid-2 gap-4">
@@ -1833,7 +2121,7 @@ const BaanAnalytics = () => {
             data = Object.values(inventoryMap);
         } else if (type === 'Movements') {
             data = Object.values(baan.inventoryMovements || {}).map(m => ({
-                'Date': new Date(m.timestamp).toLocaleString(),
+                'Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString() : '—',
                 'Movement Type': m.movementType || m.type,
                 'Part Number': m.partNumber || m.partNo,
                 'Quantity': m.quantity || m.qtyAdded || m.qtyReturned || 0,
@@ -2045,7 +2333,29 @@ const BaanRequestHistory = () => {
 
 const BaanIssuanceHistory = () => {
     const { store } = useCQA();
-    const history = Object.values(store.baan?.partIssuance || {}).sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt));
+    const explicitIssuances = Object.values(store.baan?.partIssuance || {}).map(i => ({
+        ...i,
+        requestedAt: i.requestedAt || store.baan?.partRequests?.[i.requestId]?.requestedAt || '',
+        partName: i.partName || (store.baan?.partRequests?.[i.requestId]?.partName) || (store.baan?.parts?.[i.partNumber]?.name) || '—',
+        requestedBy: i.requestedBy || (store.baan?.partRequests?.[i.requestId]?.requestedBy) || '—'
+    }));
+    
+    // Backward compatibility: include issued requests from partRequests if not yet in partIssuance
+    const requestIssuances = Object.values(store.baan?.partRequests || {})
+        .filter(r => r.issuedAt && !explicitIssuances.some(i => i.requestId === r.id))
+        .map(r => ({
+            id: `ISS-${r.id}`,
+            requestedAt: r.requestedAt || '',
+            issuedAt: r.issuedAt,
+            partNumber: r.partNo || r.partNumber,
+            partName: r.partName || store.baan?.parts?.[r.partNo || r.partNumber]?.name || '—',
+            requestedBy: r.requestedBy || '—',
+            batchId: 'Standard FIFO',
+            quantity: r.requestedQty || r.quantityRequested || 0,
+            issuedBy: r.issuedBy || 'Store Operator'
+        }));
+
+    const history = [...explicitIssuances, ...requestIssuances].sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt));
 
     return (
         <div className="animate-fade-in">
@@ -2059,9 +2369,11 @@ const BaanIssuanceHistory = () => {
                 <table className="baan-table">
                     <thead>
                         <tr>
+                            <th>Request Date</th>
                             <th>Issued At</th>
-                            <th>Device SN</th>
                             <th>Part Number</th>
+                            <th>Part Name</th>
+                            <th>Requested By</th>
                             <th>Batch ID</th>
                             <th className="num-col">Quantity</th>
                             <th>Issued By</th>
@@ -2070,9 +2382,11 @@ const BaanIssuanceHistory = () => {
                     <tbody>
                         {history.map(h => (
                             <tr key={h.id}>
+                                <td className="text-xs text-muted">{h.requestedAt ? new Date(h.requestedAt).toLocaleString() : '—'}</td>
                                 <td className="text-xs text-muted">{h.issuedAt ? new Date(h.issuedAt).toLocaleString() : '—'}</td>
-                                <td className="font-bold text-mono">{h.deviceSn || '—'}</td>
                                 <td className="text-mono font-bold" style={{ color: 'var(--baan-accent)' }}>{h.partNumber}</td>
+                                <td className="font-semibold">{h.partName || '—'}</td>
+                                <td><span className="baan-badge neutral">👤 {h.requestedBy || '—'}</span></td>
                                 <td className="text-xs text-mono">{h.batchId}</td>
                                 <td className="num-col font-bold">{h.quantity}</td>
                                 <td><span className="baan-badge neutral">👤 {h.issuedBy}</span></td>
@@ -2080,7 +2394,7 @@ const BaanIssuanceHistory = () => {
                         ))}
                         {history.length === 0 && (
                             <tr>
-                                <td colSpan="6" className="text-center text-muted py-6" style={{ textAlign: 'center' }}>
+                                <td colSpan="8" className="text-center text-muted py-6" style={{ textAlign: 'center' }}>
                                     No material issuance records logged yet.
                                 </td>
                             </tr>
@@ -2146,8 +2460,9 @@ const BaanModule = ({ user }) => {
             category: 'Material Flow',
             items: [
                 { id: 'request', label: 'Request Part', icon: Send },
+                { id: 'request_history', label: 'Request History', icon: History },
                 { id: 'issuance', label: 'Store Issuance', icon: ClipboardList, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] },
-                { id: 'issuance_history', label: 'Issuance Logs', icon: History, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
+                { id: 'issuance_history', label: 'Issuance Logs', icon: Clock, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
             ]
         },
         {

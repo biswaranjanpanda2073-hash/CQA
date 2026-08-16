@@ -632,12 +632,15 @@ export const CQAProvider = ({ children }) => {
                     batch.set(doc(collection(db, 'baan_inventory_movements')), {
                         id: inwardId,
                         partNo: data.partNo,
+                        partNumber: data.partNo,
                         qtyAdded: data.qty,
+                        quantity: data.qty,
                         perUnitCost: data.cost,
                         invoiceOrDcNumber: data.invoice,
                         batchNumber: data.batchNumber || batchId,
                         uploadedBy: uploader,
                         uploadedAt: timestamp,
+                        timestamp,
                         movementType: 'INWARD'
                     });
 
@@ -828,6 +831,37 @@ export const CQAProvider = ({ children }) => {
                 
                 batch.update(batchRef, {
                     quantityAvailable: Number(b.quantityAvailable) - take
+                });
+
+                // Record Issuance Log
+                const issuanceId = `ISS-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+                batch.set(doc(db, 'baan_part_issuance', issuanceId), {
+                    id: issuanceId,
+                    requestId,
+                    partNumber: request.partNo || request.partNumber,
+                    partName: request.partName || store.baan?.parts?.[request.partNo || request.partNumber]?.name || '',
+                    requestedBy: request.requestedBy || '',
+                    requestedAt: request.requestedAt || '',
+                    deviceSn: request.deviceSn || '',
+                    batchId: b.id,
+                    batchNumber: b.batchNumber || b.id,
+                    quantity: take,
+                    issuedBy: (user?.name || user?.id || 'System'),
+                    issuedAt: timestamp,
+                    location: b.location || ''
+                });
+
+                // Record Inventory Movement
+                batch.set(doc(collection(db, 'baan_inventory_movements')), {
+                    movementType: 'ISSUANCE',
+                    requestId,
+                    partNumber: request.partNo || request.partNumber,
+                    partNo: request.partNo || request.partNumber,
+                    batchId: b.id,
+                    quantity: take,
+                    deviceSn: request.deviceSn || '',
+                    user: (user?.name || user?.id || 'System'),
+                    timestamp
                 });
                 
                 remainingToFulfill -= take;
