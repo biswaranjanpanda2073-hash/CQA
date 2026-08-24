@@ -11,11 +11,12 @@ import {
     X,
     ChevronDown,
     Factory,
-    Database
+    Database,
+    Layers
 } from 'lucide-react';
 
 const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setOpen }) => {
-    const [settingsOpen, setSettingsOpen] = useState(['users', 'maintenance'].includes(activeSection));
+    const [settingsOpen, setSettingsOpen] = useState(['users', 'maintenance', 'unit-config'].includes(activeSection));
 
     const mainItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -27,9 +28,10 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
     const settingsSubItems = [
         { id: 'users', label: 'User Control', icon: ShieldCheck },
         { id: 'maintenance', label: 'Maintenance', icon: Wrench },
+        { id: 'unit-config', label: 'Unit/Serial Configuration', icon: Layers },
     ];
 
-    const isSettingsActive = ['users', 'maintenance'].includes(activeSection);
+    const isSettingsActive = ['users', 'maintenance', 'unit-config'].includes(activeSection);
 
     const handleNav = (id) => {
         if (id === 'info') {
@@ -143,7 +145,7 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
                     </button>
                 ))}
 
-                {user?.role === 'Admin' && (
+                {(user?.role === 'Admin' || user?.role === 'Super Admin') && (
                     <>
                         <div className="text-xs uppercase" style={{
                             color: 'var(--text-muted)',

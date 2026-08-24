@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer } from "firebase/firestore";
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
 
 const firebaseConfig = {
@@ -24,7 +24,7 @@ const ticketsCol = collection(db, 'tickets');
 
 export { 
     db, storage, devicesCol, usersCol, settingsCol, ticketsCol, 
-    doc, setDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, 
+    doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, 
     query, orderBy, collection, where, addDoc, getCountFromServer,
     ref, uploadBytes, getDownloadURL, uploadString 
 };

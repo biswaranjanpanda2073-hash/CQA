@@ -32,6 +32,7 @@ import {
     Unlock
 } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
+import UnitSerialConfig from './UnitSerialConfig';
 
 /* ═══════════════════════════════════
    USER CONTROL (Admin)
@@ -488,7 +489,7 @@ export const UserControlSection = ({ user }) => {
 /* ═══════════════════════════════════
    MAINTENANCE SECTION (Admin)
 ═══════════════════════════════════ */
-export const MaintenanceSection = ({ user }) => {
+export const MaintenanceSection = ({ user, initialTab = 'controls' }) => {
     const {
         store,
         toggleMaintenanceMode,
@@ -503,9 +504,15 @@ export const MaintenanceSection = ({ user }) => {
     const [purgeFilters, setPurgeFilters] = useState({ project: '', station: '', serial: '' });
     const [isProcessing, setIsProcessing] = useState(false);
     const [confirmModal, setConfirmModal] = useState(null);
-    const [activeMaintenanceTab, setActiveMaintenanceTab] = useState('controls');
+    const [activeMaintenanceTab, setActiveMaintenanceTab] = useState(initialTab);
     const [editNames, setEditNames] = useState({ ...systemNames });
     const [recordCount, setRecordCount] = useState('...');
+
+    React.useEffect(() => {
+        if (initialTab) {
+            setActiveMaintenanceTab(initialTab);
+        }
+    }, [initialTab]);
 
     React.useEffect(() => {
         const fetchCount = async () => {
@@ -570,14 +577,19 @@ export const MaintenanceSection = ({ user }) => {
         <div className="animate-fade-in">
             <div className="page-header">
                 <h1 className="page-title">System Administration</h1>
-                <p className="page-subtitle">Maintenance, nomenclature configuration, and infrastructure controls</p>
+                <p className="page-subtitle">Maintenance, nomenclature configuration, unit movements, and infrastructure controls</p>
             </div>
 
             {/* Sub-tab Switcher */}
-            <div className="tab-switcher" style={{ marginBottom: '1.5rem', maxWidth: 400 }}>
+            <div className="tab-switcher" style={{ marginBottom: '1.5rem', maxWidth: 620 }}>
                 <button className={`tab-item ${activeMaintenanceTab === 'controls' ? 'active' : ''}`} onClick={() => setActiveMaintenanceTab('controls')}>System Controls</button>
                 <button className={`tab-item ${activeMaintenanceTab === 'nomenclature' ? 'active' : ''}`} onClick={() => setActiveMaintenanceTab('nomenclature')}>Nomenclature Mapping</button>
+                <button className={`tab-item ${activeMaintenanceTab === 'unit-config' ? 'active' : ''}`} onClick={() => setActiveMaintenanceTab('unit-config')}>Unit/Serial Configuration</button>
             </div>
+
+            {activeMaintenanceTab === 'unit-config' && (
+                <UnitSerialConfig user={user} />
+            )}
 
             {activeMaintenanceTab === 'controls' && (
                 <div className="control-grid">
@@ -842,3 +854,8 @@ export const MaintenanceSection = ({ user }) => {
     );
 };
 
+export const UnitSerialConfigSection = ({ user, initialSerial }) => (
+    <div className="animate-fade-in">
+        <UnitSerialConfig user={user} initialSerial={initialSerial} />
+    </div>
+);

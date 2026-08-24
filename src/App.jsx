@@ -24,7 +24,7 @@ const AppContent = () => {
     try {
       const params = new URLSearchParams(window.location.search);
       const section = params.get('section');
-      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance'].includes(section)) {
+      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance', 'unit-config'].includes(section)) {
         return section;
       }
     } catch (e) { }
@@ -68,6 +68,7 @@ const AppContent = () => {
       case 'profile': title = 'CQA – Profile'; break;
       case 'users': title = 'CQA – User Management'; break;
       case 'maintenance': title = 'CQA – Maintenance'; break;
+      case 'unit-config': title = 'CQA – Unit/Serial Configuration'; break;
     }
     document.title = title;
   }, [user, activeSection]);
@@ -135,14 +136,17 @@ const AppContent = () => {
 
   // ─── Section Renderer ───
   const renderSection = () => {
+    const isAdmin = user.role === 'Admin' || user.role === 'Super Admin';
+
     switch (activeSection) {
       case 'dashboard': return <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
       case 'operation': return <Stations user={user} />;
-      case 'info': return <InfoCentre />;
+      case 'info': return <InfoCentre user={user} onNavigateToConfig={(sn) => { setActiveSection('unit-config'); }} />;
       case 'baan': return <BaanModule user={user} />;
       case 'profile': return <UserControl user={user} />;
-      case 'users': return user.role === 'Admin' ? <UserControlSection user={user} /> : <UserControl user={user} />;
-      case 'maintenance': return user.role === 'Admin' ? <MaintenanceSection user={user} /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'users': return isAdmin ? <UserControlSection user={user} /> : <UserControl user={user} />;
+      case 'maintenance': return isAdmin ? <MaintenanceSection user={user} initialTab="controls" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'unit-config': return isAdmin ? <MaintenanceSection user={user} initialTab="unit-config" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
       default: return <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
     }
   };

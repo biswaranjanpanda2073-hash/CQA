@@ -51,7 +51,8 @@ const TopNav = ({ theme, toggleTheme, activeSection, user, onSectionChange, togg
         info: 'Info Centre',
         profile: 'Profile',
         users: 'User Control',
-        maintenance: 'Maintenance'
+        maintenance: 'Maintenance',
+        'unit-config': 'Unit/Serial Configuration'
     };
 
     const formatTime = (d) => d.toLocaleTimeString('en-IN', {

@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { 
-    db, storage, devicesCol, doc, setDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where,
+    db, storage, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
     ref, uploadBytes, getDownloadURL, uploadString 
 } from '../firebase';
+import {
+    normalizeSerialNumbers,
+    PROJECT_WORKFLOWS,
+    calculateSkippedStations,
+    calculateMovementClassification,
+    calculateRiskLevel,
+    validateUnitRecord
+} from '../utils/movementEngine';
 
 const INITIAL_STORE = {
     devices: {},
@@ -512,11 +520,491 @@ export const CQAProvider = ({ children }) => {
         };
     }, []);
 
+    // ─── UNIT / SERIAL CONFIGURATION & MOVEMENT ENGINE ───
+    const validateMovementUnits = useCallback(async (rawSerialNumbers, targetStationId = null, user = null) => {
+        const norm = normalizeSerialNumbers(rawSerialNumbers);
+        const userRole = user?.role || 'Admin';
+        const validatedList = [];
+        const counts = {
+            total: norm.totalEntered,
+            unique: norm.uniqueCount,
+            duplicates: norm.duplicatesCount,
+            ready: 0,
+            alreadyAtDestination: 0,
+            locked: 0,
+            completed: 0,
+            notFound: 0,
+            invalid: 0
+        };
+
+        const snList = norm.serialNumbers;
+        const fetchResults = {};
+        for (let i = 0; i < snList.length; i += 50) {
+            const chunk = snList.slice(i, i + 50);
+            await Promise.all(chunk.map(async (sn) => {
+                try {
+                    const snap = await getDoc(doc(db, 'devices', sn));
+                    if (snap.exists()) {
+                        const u = snap.data();
+                        const activeP = resolveActiveProject(u);
+                        fetchResults[sn] = { ...u, id: snap.id, _resolvedProject: activeP, project: activeP };
+                    } else {
+                        fetchResults[sn] = null;
+                    }
+                } catch (err) {
+                    console.error(`Error fetching unit ${sn}:`, err);
+                    fetchResults[sn] = null;
+                }
+            }));
+        }
+
+        for (const sn of snList) {
+            const unit = fetchResults[sn];
+            const validation = validateUnitRecord(unit, targetStationId, unit?.project, userRole);
+            
+            let skipped = [];
+            let classification = null;
+            let risk = 'LOW';
+
+            if (unit && targetStationId !== null && targetStationId !== undefined) {
+                const fromStationId = unit.currentStation || 1;
+                skipped = calculateSkippedStations(fromStationId, Number(targetStationId), unit.project || 'Device');
+                classification = calculateMovementClassification(fromStationId, Number(targetStationId), unit.project || 'Device', unit.status);
+                risk = calculateRiskLevel(fromStationId, Number(targetStationId), unit.project || 'Device', unit.status, skipped);
+            }
+
+            if (validation.statusKey === 'READY_TO_MOVE') counts.ready++;
+            else if (validation.statusKey === 'ALREADY_AT_DESTINATION') counts.alreadyAtDestination++;
+            else if (validation.statusKey === 'LOCKED') counts.locked++;
+            else if (validation.statusKey === 'COMPLETED_RESTRICTED') counts.completed++;
+            else if (validation.statusKey === 'NOT_FOUND') counts.notFound++;
+            else counts.invalid++;
+
+            validatedList.push({
+                id: sn,
+                serialNumber: sn,
+                exists: !!unit,
+                unitData: unit,
+                project: unit?.project || 'Unknown',
+                currentStation: unit?.currentStation || null,
+                stationName: unit?.stationName || 'Unknown',
+                status: unit?.status || 'Unknown',
+                updatedAt: unit?.updatedAt || null,
+                validationStatus: validation.statusKey,
+                isValid: validation.isValid,
+                message: validation.message,
+                skippedStations: skipped,
+                classification,
+                risk
+            });
+        }
+
+        return {
+            normalized: norm,
+            counts,
+            validatedUnits: validatedList,
+            groupedByProject: validatedList.reduce((acc, u) => {
+                const p = u.project || 'Unknown';
+                if (!acc[p]) acc[p] = [];
+                acc[p].push(u);
+                return acc;
+            }, {})
+        };
+    }, [resolveActiveProject]);
+
+    const executeAdminMovement = useCallback(async ({
+        units,
+        targetStationId,
+        targetStationName,
+        reasonCategory,
+        reason,
+        remarks,
+        user,
+        onProgress
+    }) => {
+        if (!user || (user.role !== 'Admin' && user.role !== 'Super Admin')) {
+            throw new Error('Unauthorized: Admin or Super Admin privilege required.');
+        }
+
+        if (!targetStationId || !targetStationName) {
+            throw new Error('Target destination station is required.');
+        }
+
+        if (!reasonCategory || !reason) {
+            throw new Error('Reason category and reason are mandatory.');
+        }
+
+        const timestamp = new Date().toISOString();
+        const dateStr = timestamp.slice(0, 10).replace(/-/g, '');
+        const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+        const movementId = `MOVE-${dateStr}-${randomSuffix}`;
+
+        const targetStId = Number(targetStationId);
+        const eligibleUnits = units.filter(u => u.isValid || u.validationStatus === 'READY_TO_MOVE');
+        if (eligibleUnits.length === 0) {
+            throw new Error('No eligible units selected for movement.');
+        }
+
+        // 1 & 2. Pre-create Movement Audit Record with status 'PROCESSING'
+        const movementDocRef = doc(db, 'admin_movements', movementId);
+        const initialMovementDoc = {
+            movementId,
+            type: calculateMovementClassification(1, targetStId, 'Device', 'Processing'),
+            status: 'PROCESSING',
+            createdAt: timestamp,
+            startedAt: timestamp,
+            createdBy: {
+                userId: user.id || user.uid || 'ADMIN',
+                name: user.name || user.id || 'Admin',
+                role: user.role || 'Admin'
+            },
+            targetStationId: targetStId,
+            targetStationName,
+            reasonCategory,
+            reason,
+            remarks: remarks || '',
+            requestedCount: eligibleUnits.length,
+            validatedCount: units.length,
+            eligibleCount: eligibleUnits.length,
+            successCount: 0,
+            failedCount: 0,
+            unitIds: [],
+            serialNumbers: eligibleUnits.map(u => u.id),
+            failedUnits: []
+        };
+
+        try {
+            await setDoc(movementDocRef, initialMovementDoc);
+        } catch (e) {
+            console.error('Failed to initialize admin_movements audit record:', e);
+            throw new Error(`Failed to create movement audit record: ${e.message}`);
+        }
+
+        const results = {
+            success: 0,
+            failed: 0,
+            successUnits: [],
+            failedUnits: [],
+            movementId
+        };
+
+        // 3. Execute device batches
+        const CHUNK_SIZE = 350;
+        const totalChunks = Math.ceil(eligibleUnits.length / CHUNK_SIZE);
+
+        for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+            const chunk = eligibleUnits.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
+            const batch = writeBatch(db);
+            const chunkSuccessList = [];
+            const chunkFailList = [];
+
+            // Concurrency Stale-Check: Fetch latest docs for this chunk right before committing
+            const chunkIds = chunk.map(u => u.id);
+            const freshDocs = {};
+            await Promise.all(chunkIds.map(async cid => {
+                try {
+                    const snap = await getDoc(doc(db, 'devices', cid));
+                    if (snap.exists()) freshDocs[cid] = snap.data();
+                } catch (e) {
+                    console.warn(`Pre-commit fetch error for ${cid}:`, e);
+                }
+            }));
+
+            for (const unitItem of chunk) {
+                const cid = unitItem.id;
+                const fresh = freshDocs[cid];
+
+                if (!fresh) {
+                    chunkFailList.push({ serialNumber: cid, error: 'Document disappeared before write commit.' });
+                    continue;
+                }
+
+                // Stale-state prevention
+                const expectedStation = unitItem.currentStation;
+                if (expectedStation !== undefined && expectedStation !== null && fresh.currentStation !== expectedStation) {
+                    chunkFailList.push({
+                        serialNumber: cid,
+                        error: `Stale State: Unit station changed to ${fresh.stationName || fresh.currentStation} during operation.`
+                    });
+                    continue;
+                }
+
+                const fromStationId = fresh.currentStation || 1;
+                const fromStationName = fresh.stationName || 'RECEIVING';
+                const unitProject = fresh.project || unitItem.project || 'Device';
+                const skipped = calculateSkippedStations(fromStationId, targetStId, unitProject);
+                const classification = calculateMovementClassification(fromStationId, targetStId, unitProject, fresh.status);
+
+                let newStatus = 'Processing';
+                let cycleEndDate = null;
+                let lockDate = null;
+                let nextStationId = targetStId;
+                let nextStationName = targetStationName;
+
+                const workflow = PROJECT_WORKFLOWS[unitProject] || PROJECT_WORKFLOWS['Device'];
+                const targetStObj = workflow.find(s => s.id === targetStId);
+
+                if (targetStObj?.type === 'TERMINAL_FG') {
+                    newStatus = 'Completed';
+                    cycleEndDate = timestamp;
+                    nextStationId = null;
+                    nextStationName = 'FG (DONE)';
+                } else if (targetStObj?.type === 'TERMINAL_SCRAP') {
+                    newStatus = (unitProject === 'Device') ? 'Scrap' : 'Reject';
+                    lockDate = timestamp;
+                    nextStationId = null;
+                    nextStationName = (unitProject === 'Device') ? 'SCRAP (LOCKED)' : 'REJECTED';
+                }
+
+                let movementResult = 'ADMIN_REROUTE';
+                if (classification === 'BACKWARD_RETURN') movementResult = 'ADMIN_RETURN';
+                else if (classification === 'TERMINAL_MOVEMENT') movementResult = 'ADMIN_TERMINAL_MOVEMENT';
+                else if (classification === 'ADMIN_REOPEN') movementResult = 'ADMIN_REOPEN';
+
+                const historyEntry = {
+                    station: `ADMIN OVERRIDE: -> ${nextStationName}`,
+                    stationId: targetStId,
+                    result: movementResult,
+                    timestamp,
+                    movementId,
+                    fromStationId,
+                    fromStationName,
+                    toStationId: targetStId,
+                    toStationName: nextStationName,
+                    skippedStations: skipped,
+                    reasonCategory,
+                    reason,
+                    remarks: remarks || '',
+                    operatorId: user.id || user.uid || 'ADMIN',
+                    operator: user.name || user.id || 'Admin',
+                    operatorRole: user.role || 'Admin',
+                    looper: fresh.looper || 1,
+                    project: unitProject,
+                    details: {
+                        movementType: classification,
+                        previousStation: fromStationName,
+                        targetStation: nextStationName,
+                        skippedStations: skipped.map(s => s.stationName),
+                        reasonCategory,
+                        reason,
+                        remarks: remarks || ''
+                    }
+                };
+
+                const updatedDevice = {
+                    ...fresh,
+                    currentStation: nextStationId,
+                    stationName: nextStationName,
+                    status: newStatus,
+                    updatedAt: timestamp,
+                    history: [...(Array.isArray(fresh.history) ? fresh.history : []), historyEntry]
+                };
+
+                if (cycleEndDate) updatedDevice.cycleEndDate = cycleEndDate;
+                if (lockDate) updatedDevice.lockDate = lockDate;
+
+                const devRef = doc(db, 'devices', cid);
+                batch.set(devRef, JSON.parse(JSON.stringify(updatedDevice)));
+                chunkSuccessList.push({ id: cid, serialNumber: cid, fromStation: fromStationName, toStation: nextStationName });
+            }
+
+            try {
+                await batch.commit();
+                results.success += chunkSuccessList.length;
+                results.successUnits.push(...chunkSuccessList);
+                results.failed += chunkFailList.length;
+                results.failedUnits.push(...chunkFailList);
+            } catch (commitErr) {
+                console.error(`Batch commit error in chunk ${chunkIdx + 1}:`, commitErr);
+                results.failed += chunk.length;
+                results.failedUnits.push(...chunk.map(u => ({ serialNumber: u.id, error: commitErr.message })));
+            }
+
+            if (onProgress) {
+                onProgress({
+                    currentBatch: chunkIdx + 1,
+                    totalBatches: totalChunks,
+                    processedCount: results.success + results.failed,
+                    totalCount: eligibleUnits.length,
+                    percentage: Math.round(((results.success + results.failed) / eligibleUnits.length) * 100)
+                });
+            }
+        }
+
+        // 4. Update Movement Record with final completion status
+        const finalStatus = (results.failed === 0 && results.success > 0)
+            ? 'COMPLETED'
+            : results.success > 0
+            ? 'PARTIALLY_COMPLETED'
+            : 'FAILED';
+
+        const completedTimestamp = new Date().toISOString();
+        const finalUpdates = {
+            status: finalStatus,
+            completedAt: completedTimestamp,
+            successCount: results.success,
+            failedCount: results.failed,
+            unitIds: results.successUnits.map(u => u.serialNumber),
+            serialNumbers: results.successUnits.map(u => u.serialNumber),
+            failedUnits: results.failedUnits
+        };
+
+        try {
+            await updateDoc(movementDocRef, finalUpdates);
+        } catch (e) {
+            console.error('Failed to update admin_movements completion status:', e);
+            try {
+                await setDoc(movementDocRef, finalUpdates, { merge: true });
+            } catch (mergeErr) {
+                console.error('Fallback setDoc merge also failed:', mergeErr);
+            }
+        }
+
+        const finalMovementDoc = {
+            ...initialMovementDoc,
+            ...finalUpdates
+        };
+
+        return {
+            ...results,
+            status: finalStatus,
+            movementDoc: finalMovementDoc
+        };
+    }, []);
+
+    const reverseAdminMovement = useCallback(async (movementId, user) => {
+        if (!user || (user.role !== 'Admin' && user.role !== 'Super Admin')) {
+            throw new Error('Unauthorized: Admin or Super Admin privilege required.');
+        }
+
+        const movDocRef = doc(db, 'admin_movements', movementId);
+        const movSnap = await getDoc(movDocRef);
+        if (!movSnap.exists()) throw new Error(`Movement transaction "${movementId}" was not found.`);
+
+        const movData = movSnap.data();
+        if (movData.reversedAt) throw new Error(`Movement ${movementId} was already reversed on ${new Date(movData.reversedAt).toLocaleString()}.`);
+
+        const timestamp = new Date().toISOString();
+        const dateStr = timestamp.slice(0, 10).replace(/-/g, '');
+        const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+        const reversalMovementId = `REV-${dateStr}-${randomSuffix}`;
+
+        const batch = writeBatch(db);
+        const successList = [];
+        const failedList = [];
+
+        for (const sn of (movData.unitIds || [])) {
+            const dSnap = await getDoc(doc(db, 'devices', sn));
+            if (!dSnap.exists()) {
+                failedList.push({ serialNumber: sn, error: 'Unit record missing.' });
+                continue;
+            }
+            const unit = dSnap.data();
+            const historyArr = Array.isArray(unit.history) ? unit.history : [];
+            const originalMoveEntry = historyArr.find(h => h.movementId === movementId);
+
+            const returnStationId = originalMoveEntry?.fromStationId || 1;
+            const returnStationName = originalMoveEntry?.fromStationName || 'RECEIVING';
+
+            const historyEntry = {
+                station: `ADMIN REVERSAL: -> ${returnStationName}`,
+                stationId: returnStationId,
+                result: 'ADMIN_MOVEMENT_REVERSAL',
+                timestamp,
+                movementId: reversalMovementId,
+                reversesMovementId: movementId,
+                fromStationId: unit.currentStation,
+                fromStationName: unit.stationName,
+                toStationId: returnStationId,
+                toStationName: returnStationName,
+                reasonCategory: 'Data / Process Correction',
+                reason: 'Administrative Movement Reversal',
+                remarks: `Reversal of movement ${movementId}`,
+                operatorId: user.id || user.uid,
+                operator: user.name || user.id || 'Admin',
+                operatorRole: user.role || 'Admin',
+                looper: unit.looper || 1,
+                project: unit.project || 'Device',
+                details: {
+                    movementType: 'ADMIN_MOVEMENT_REVERSAL',
+                    reversesMovementId: movementId,
+                    previousStation: unit.stationName,
+                    targetStation: returnStationName
+                }
+            };
+
+            const updated = {
+                ...unit,
+                currentStation: returnStationId,
+                stationName: returnStationName,
+                status: 'Processing',
+                updatedAt: timestamp,
+                history: [...historyArr, historyEntry]
+            };
+
+            batch.set(doc(db, 'devices', sn), JSON.parse(JSON.stringify(updated)));
+            successList.push(sn);
+        }
+
+        const reversalDoc = {
+            movementId: reversalMovementId,
+            reversesMovementId: movementId,
+            type: 'ADMIN_MOVEMENT_REVERSAL',
+            status: 'COMPLETED',
+            createdAt: timestamp,
+            createdBy: {
+                userId: user.id || user.uid,
+                name: user.name || user.id || 'Admin',
+                role: user.role || 'Admin'
+            },
+            reasonCategory: 'Data / Process Correction',
+            reason: 'Administrative Movement Reversal',
+            remarks: `Reversed ${movementId}`,
+            requestedCount: movData.unitIds?.length || 0,
+            successCount: successList.length,
+            failedCount: failedList.length,
+            unitIds: successList,
+            serialNumbers: successList,
+            failedUnits: failedList
+        };
+
+        batch.set(doc(db, 'admin_movements', reversalMovementId), reversalDoc);
+        batch.update(movDocRef, {
+            reversedAt: timestamp,
+            reversedBy: user.name || user.id || 'Admin',
+            reversalMovementId
+        });
+
+        await batch.commit();
+
+        return {
+            success: true,
+            reversalMovementId,
+            successCount: successList.length,
+            failedCount: failedList.length,
+            failedUnits: failedList
+        };
+    }, []);
+
+    const fetchAdminMovements = useCallback(async () => {
+        try {
+            const q = query(collection(db, 'admin_movements'), orderBy('createdAt', 'desc'));
+            const snap = await getDocs(q);
+            const list = [];
+            snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+            return list;
+        } catch (e) {
+            console.error('Error fetching admin movements:', e);
+            return [];
+        }
+    }, []);
+
     const contextValue = {
         store, loading, 
         getUnit: getUnitById, 
         validateScan: validateScanStatus, 
         processUnit, bulkProcessUnits, fetchStationMetrics, uploadProofImage,
+        validateMovementUnits, executeAdminMovement, reverseAdminMovement, fetchAdminMovements,
         systemNames, getDisplayName, getProjectCategory, resolveActiveProject, authenticateUser,
         createUser: async (u) => setDoc(doc(db, 'users', u.id), u),
         updateUser: async (oldId, userData) => {

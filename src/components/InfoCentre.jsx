@@ -25,7 +25,10 @@ import {
     AlertTriangle,
     ShieldAlert,
     Camera,
-    Image as ImageIcon
+    Image as ImageIcon,
+    FastForward,
+    Layers,
+    RotateCcw
 } from 'lucide-react';
 
 import { useCQA } from '../hooks/useCQA';
@@ -42,6 +45,7 @@ const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLa
         project === 'Inward QC' ? INWARD_FLOW : DEVICE_FLOW;
 
     const completedStages = new Set();
+    const skippedStages = new Set();
     let currentStage = null;
 
     const latestLooper = Math.max(...(history || []).map(h => h.looper || 1), 1);
@@ -55,29 +59,60 @@ const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLa
                 currentStage = i;
             }
         });
+
+        const skippedList = h.skippedStations || h.details?.skippedStations || [];
+        skippedList.forEach(s => {
+            const sName = (typeof s === 'string' ? s : s.stationName || '').toUpperCase();
+            flow.forEach((f, i) => {
+                if (sName.includes(f.toUpperCase())) {
+                    skippedStages.add(i);
+                }
+            });
+        });
     });
 
     return (
         <div className="progression-track" style={{ gap: hideLabels ? '0.5rem' : '1rem' }}>
             {flow.map((stage, i) => {
+                const isSkipped = skippedStages.has(i) && !completedStages.has(i);
                 const isCompleted = completedStages.has(i);
                 const isCurrent = i === currentStage;
 
                 return (
                     <React.Fragment key={i}>
-                        <div className="progression-step" style={{ minWidth: hideLabels ? 'auto' : '80px' }}>
+                        <div className="progression-step" style={{ minWidth: hideLabels ? 'auto' : '80px' }} title={isSkipped ? 'SKIPPED BY ADMIN OVERRIDE' : undefined}>
                             <div 
-                                className={`progression-dot ${isCompleted ? (isCurrent ? 'current' : 'completed') : ''}`}
-                                style={{ width: hideLabels ? 24 : 28, height: hideLabels ? 24 : 28, fontSize: hideLabels ? '10px' : '11px' }}
+                                className={`progression-dot ${isSkipped ? 'skipped' : isCompleted ? (isCurrent ? 'current' : 'completed') : ''}`}
+                                style={{
+                                    width: hideLabels ? 24 : 28, height: hideLabels ? 24 : 28, fontSize: hideLabels ? '10px' : '11px',
+                                    ...(isSkipped ? {
+                                        background: 'var(--warning-bg)',
+                                        color: 'var(--warning)',
+                                        border: '2px dashed var(--warning)'
+                                    } : {})
+                                }}
                             >
-                                {isCompleted && !isCurrent ? <CheckCircle2 size={hideLabels ? 12 : 14} /> : (i + 1)}
+                                {isSkipped ? (
+                                    <FastForward size={hideLabels ? 10 : 12} />
+                                ) : isCompleted && !isCurrent ? (
+                                    <CheckCircle2 size={hideLabels ? 12 : 14} />
+                                ) : (i + 1)}
                             </div>
                             {!hideLabels && (
-                                <span className={`progression-label ${isCurrent ? 'current' : ''}`}>{getDisplayName('stations', stage.toUpperCase()) || stage}</span>
+                                <span className={`progression-label ${isCurrent ? 'current' : ''}`} style={isSkipped ? { color: 'var(--warning)', fontWeight: 700 } : {}}>
+                                    {getDisplayName('stations', stage.toUpperCase()) || stage}
+                                    {isSkipped && <span style={{ display: 'block', fontSize: '8px', opacity: 0.8 }}>(SKIPPED)</span>}
+                                </span>
                             )}
                         </div>
                         {i < flow.length - 1 && (
-                            <div className={`progression-connector ${isCompleted && !isCurrent ? 'completed' : ''}`} style={{ margin: hideLabels ? '0 -4px' : '0 4px' }} />
+                            <div 
+                                className={`progression-connector ${isCompleted && !isCurrent ? 'completed' : isSkipped ? 'skipped' : ''}`}
+                                style={{
+                                    margin: hideLabels ? '0 -4px' : '0 4px',
+                                    ...(isSkipped ? { borderTop: '2px dashed var(--warning)', background: 'transparent' } : {})
+                                }}
+                            />
                         )}
                     </React.Fragment>
                 );
@@ -104,7 +139,7 @@ const DetailItem = ({ label, value, icon: Icon }) => (
 );
 
 // ─── InfoCentre Component ───
-const InfoCentre = () => {
+const InfoCentre = ({ user, onNavigateToConfig }) => {
     const { getUnit, store, getDisplayName, resolveActiveProject } = useCQA();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -350,8 +385,26 @@ const InfoCentre = () => {
                                         {/* Progression Tracker (Latest Lifecycle) */}
                                         <div className="card" style={{ marginBottom: '0.5rem' }}>
                                             <div className="card-body">
-                                                <div className="text-xs font-bold uppercase text-muted tracking-wide" style={{ marginBottom: '0.75rem' }}>
-                                                   Current Lifecycle Progression (Cycle {latestLooper})
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                                    <div className="text-xs font-bold uppercase text-muted tracking-wide">
+                                                       Current Lifecycle Progression (Cycle {latestLooper})
+                                                    </div>
+                                                    {(user?.role === 'Admin' || user?.role === 'Super Admin') && (
+                                                        <button
+                                                            className="btn btn-primary text-xs"
+                                                            style={{ padding: '4px 10px', height: 28 }}
+                                                            onClick={() => {
+                                                                if (onNavigateToConfig) {
+                                                                    onNavigateToConfig(unit.id);
+                                                                } else {
+                                                                    window.open(`${window.location.origin}${window.location.pathname}?section=unit-config&serial=${unit.id}`, '_blank');
+                                                                }
+                                                            }}
+                                                            title="Open Unit/Serial Configuration for this unit"
+                                                        >
+                                                            <Layers size={13} /> Administrative Movement
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 <StageProgressionTracker history={latestHistory} project={currentProject} getDisplayName={getDisplayName} />
                                             </div>
@@ -369,28 +422,34 @@ const InfoCentre = () => {
                                                 </div>
                                                 <div className="card-body">
                                                     <DetailItem label="Serial Number" value={unit.id} icon={Cpu} />
-                                                    <DetailItem label="Status" value={unit.status} icon={Activity} />
-                                                    <DetailItem label="Current Station" value={getDisplayName('stations', unit.stationName)} icon={Database} />
-                                                    <DetailItem label="Project" value={getDisplayName('projects', currentProject)} icon={FileText} />
-                                                    <DetailItem label="Cycle Started" value={formatDate(latestHistory[0]?.timestamp)} icon={Clock} />
+                                                    <DetailItem label="Resolved Project" value={getDisplayName('projects', currentProject)} icon={Package} />
+                                                    <DetailItem label="Current Station" value={getDisplayName('stations', unit.stationName) || unit.stationName} icon={ClipboardList} />
+                                                    <DetailItem label="Cycle Count" value={`Cycle ${latestLooper}`} icon={History} />
+                                                    <DetailItem label="Last Activity" value={formatDate(unit.updatedAt || unit.createdAt)} icon={Calendar} />
                                                 </div>
                                             </div>
 
-                                            {/* Right: Product Specifications (Latest Looper Context) */}
-                                            <div className="card">
+                                            {/* Right: Technical Specifications */}
+                                            <div className="card" style={{ borderTop: '4px solid var(--info)' }}>
                                                 <div className="card-header">
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <Package size={16} color="var(--info)" />
-                                                        <span className="text-sm font-bold">Product Specification</span>
+                                                        <FileText size={16} color="var(--info)" />
+                                                        <span className="text-sm font-bold">Technical Specifications</span>
                                                     </div>
                                                 </div>
                                                 <div className="card-body">
-                                                    <DetailItem label="Model" value={specs.model} icon={Cpu} />
-                                                    <DetailItem label="Type" value={specs.productType} icon={Package} />
-                                                    <DetailItem label="Batch ID" value={specs.batchNo} icon={Database} />
-                                                    <DetailItem label="Hardware Rev" value={specs.hw} icon={Activity} />
-                                                    <DetailItem label="Firmware" value={specs.sw} icon={Loader2} />
-                                                    {specs.cx_remarks && <DetailItem label="CX Remarks" value={specs.cx_remarks} icon={AlertTriangle} />}
+                                                    {Object.keys(specs).length === 0 ? (
+                                                        <div className="text-muted text-xs font-semibold" style={{ padding: '1rem 0' }}>
+                                                            No technical specification parameters recorded.
+                                                        </div>
+                                                    ) : (
+                                                        Object.entries(specs)
+                                                            .filter(([k, v]) => typeof v !== 'object' || v === null)
+                                                            .slice(0, 5)
+                                                            .map(([k, v]) => (
+                                                                <DetailItem key={k} label={k.replace(/([A-Z])/g, ' $1')} value={String(v)} />
+                                                            ))
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -453,135 +512,191 @@ const InfoCentre = () => {
                                         </div>
 
                                         {/* Steps for this looper */}
-                                        {grouped[looper].reverse().map((h, i) => (
-                                            <div key={i} className="card animate-fade-in" style={{
-                                                borderLeft: `4px solid ${h.result?.includes('Pass') ? 'var(--success)' : 'var(--error)'}`,
-                                                opacity: looper == (unit.looper || 1) ? 1 : 0.75
-                                            }}>
-                                                <div className="card-header">
-                                                    <div>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                            <h4 className="font-bold uppercase" style={{ fontSize: '0.9375rem' }}>{getDisplayName('stations', h.station)}</h4>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                                                <User size={11} color="var(--text-muted)" />
-                                                                <span className="text-xs font-semibold text-muted">{h.operator}</span>
+                                        {grouped[looper].reverse().map((h, i) => {
+                                            const isAdminReroute = h.result === 'ADMIN_REROUTE';
+                                            const isAdminReturn = h.result === 'ADMIN_RETURN';
+                                            const isAdminTerminal = h.result === 'ADMIN_TERMINAL_MOVEMENT';
+                                            const isAdminReversal = h.result === 'ADMIN_MOVEMENT_REVERSAL';
+                                            const isAdminEvent = isAdminReroute || isAdminReturn || isAdminTerminal || isAdminReversal;
+
+                                            const borderStyle = isAdminReroute
+                                                ? '4px solid #8b5cf6'
+                                                : isAdminReturn
+                                                ? '4px solid var(--warning)'
+                                                : isAdminTerminal
+                                                ? '4px solid #06b6d4'
+                                                : isAdminReversal
+                                                ? '4px solid #ec4899'
+                                                : h.result?.includes('Pass')
+                                                ? '4px solid var(--success)'
+                                                : '4px solid var(--error)';
+
+                                            const skippedArr = h.skippedStations || h.details?.skippedStations || [];
+
+                                            return (
+                                                <div key={i} className="card animate-fade-in" style={{
+                                                    borderLeft: borderStyle,
+                                                    opacity: looper == (unit.looper || 1) ? 1 : 0.75
+                                                }}>
+                                                    <div className="card-header">
+                                                        <div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                <h4 className="font-bold uppercase" style={{ fontSize: '0.9375rem' }}>{getDisplayName('stations', h.station)}</h4>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                                    <User size={11} color="var(--text-muted)" />
+                                                                    <span className="text-xs font-semibold text-muted">{h.operator}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-xs font-semibold text-muted" style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                                <Calendar size={11} /> {formatDate(h.timestamp)}
+                                                                {h.project && <span className="status-pill info" style={{ fontSize: '0.65rem', padding: '2px 6px', marginLeft: '8px' }}>{getDisplayName('projects', h.project)}</span>}
+                                                                {h.movementId && <span className="text-mono" style={{ fontSize: '0.65rem', color: 'var(--primary)', marginLeft: 8 }}>[{h.movementId}]</span>}
                                                             </div>
                                                         </div>
-                                                        <div className="text-xs font-semibold text-muted" style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                                            <Calendar size={11} /> {formatDate(h.timestamp)}
-                                                            {h.project && <span className="status-pill info" style={{fontSize: '0.65rem', padding: '2px 6px', marginLeft: '8px'}}>{getDisplayName('projects', h.project)}</span>}
-                                                        </div>
+                                                        <span
+                                                            className={`status-pill ${isAdminEvent ? '' : h.result?.includes('Pass') ? 'success' : 'error'}`}
+                                                            style={isAdminEvent ? {
+                                                                background: isAdminReroute ? '#8b5cf6' : isAdminReturn ? 'var(--warning-bg)' : isAdminTerminal ? '#06b6d4' : '#ec4899',
+                                                                color: isAdminReturn ? 'var(--warning)' : '#fff',
+                                                                fontWeight: 700
+                                                            } : {}}
+                                                        >
+                                                            {h.result?.replace(/_/g, ' ')?.toUpperCase()}
+                                                        </span>
                                                     </div>
-                                                    <span className={`status-pill ${h.result?.includes('Pass') ? 'success' : 'error'}`}>
-                                                        {h.result?.toUpperCase()}
-                                                    </span>
-                                                </div>
 
-                                                {h.details && Object.keys(h.details).length > 0 && (
-                                                    <div className="card-body" style={{ background: 'var(--bg-input)', padding: '1.25rem' }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                                                            {/* Station Input Fields */}
-                                                            {(() => {
-                                                                const fields = Object.entries(h.details).filter(([_, v]) => typeof v !== 'object' || v === null);
-                                                                if (fields.length === 0) return null;
-                                                                return (
-                                                                    <div className="grid md-grid-2" style={{
-                                                                        columnGap: '2.5rem', rowGap: '0.25rem',
-                                                                        background: 'var(--bg-card)', padding: '1.25rem',
-                                                                        borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)',
-                                                                        boxShadow: 'var(--shadow-sm)'
-                                                                    }}>
-                                                                        {fields.map(([key, val]) => (
-                                                                            <div key={key} style={{
-                                                                                display: 'flex', justifyContent: 'space-between',
-                                                                                alignItems: 'center', padding: '0.5rem 0',
-                                                                                borderBottom: '1px solid var(--border-light)',
-                                                                            }}>
-                                                                                <span className="text-xs font-bold uppercase text-muted" style={{ letterSpacing: '0.04em' }}>
-                                                                                    {key.replace(/([A-Z])/g, ' $1').trim()}
-                                                                                </span>
-                                                                                <span className="font-semibold text-sm text-right" style={{ color: 'var(--text-main)' }}>
-                                                                                    {val?.toString() || '—'}
-                                                                                </span>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                );
-                                                            })()}
-
-                                                            {/* Checklist Fields */}
-                                                            {Object.entries(h.details)
-                                                                .filter(([k, v]) => typeof v === 'object' && v !== null && k !== 'checkpointImages' && k !== 'tracker')
-                                                                .map(([key, checklist]) => (
-                                                                    <div key={key} style={{
-                                                                        background: 'var(--bg-card)', borderRadius: 'var(--radius-md)',
-                                                                        border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-sm)',
-                                                                        padding: '1.25rem',
-                                                                    }}>
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-                                                                            <ClipboardList size={16} color="var(--primary)" />
-                                                                            <h5 className="text-xs font-bold uppercase text-muted tracking-tight">
-                                                                                {key.replace(/([A-Z])/g, ' $1').trim()} Inspection
-                                                                            </h5>
-                                                                        </div>
-                                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                                            {Object.entries(checklist).map(([checkName, checkVal], idx) => (
-                                                                                <div key={idx} style={{
-                                                                                    display: 'flex', justifyContent: 'space-between',
-                                                                                    alignItems: 'center', padding: '0.75rem 0',
-                                                                                    borderBottom: idx < Object.keys(checklist).length - 1 ? '1px solid var(--border-light)' : 'none',
-                                                                                    gap: '1.5rem'
-                                                                                }}>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
-                                                                                        {checkVal === true ? <Check size={16} strokeWidth={3} color="var(--success)" /> : <X size={16} strokeWidth={3} color="var(--error)" />}
-                                                                                        <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>{checkName}</span>
-                                                                                    </div>
-                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                                                        <span className={`status-pill ${checkVal === true ? 'success' : 'error'}`} style={{ fontSize: '0.625rem', minWidth: '55px', justifyContent: 'center' }}>
-                                                                                            {checkVal === true ? 'PASS' : 'FAIL'}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-
-                                                            {/* Checkpoint Images */}
-                                                            {h.details?.checkpointImages && Object.keys(h.details.checkpointImages).length > 0 && (
-                                                                <div style={{ marginTop: '0.75rem' }}>
-                                                                    <div className="flex items-center gap-2 mb-3 px-1">
-                                                                        <Camera size={14} className="text-primary" />
-                                                                        <span className="text-xs font-bold uppercase text-muted">Media Proofs</span>
-                                                                    </div>
-                                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-                                                                        {Object.entries(h.details.checkpointImages).map(([label, urls]) => (
-                                                                            urls.map((url, i) => (
-                                                                                <div 
-                                                                                    key={`${label}-${i}`} 
-                                                                                    style={{ position: 'relative', width: 90, height: 60, cursor: 'pointer', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border)' }}
-                                                                                    onClick={() => setSelectedImage({ url, label })}
-                                                                                >
-                                                                                    <img 
-                                                        src={url} 
-                                                        alt={label} 
-                                                        loading="lazy"
-                                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                                    />
-                                                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '2px 4px', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '8px', fontWeight: 'bold' }}>
-                                                                                        {label}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))
-                                                                        ))}
-                                                                    </div>
+                                                    {/* Admin movement callout banner */}
+                                                    {isAdminEvent && (
+                                                        <div style={{
+                                                            padding: '0.75rem 1.25rem',
+                                                            background: 'var(--bg-input)',
+                                                            borderBottom: '1px solid var(--border-light)',
+                                                            fontSize: '0.8125rem'
+                                                        }}>
+                                                            {skippedArr.length > 0 && (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--warning)', fontWeight: 700, marginBottom: 4 }}>
+                                                                    <FastForward size={14} /> Skipped {skippedArr.length} Station(s): {skippedArr.map(s => typeof s === 'string' ? s : s.stationName).join(', ')}
+                                                                </div>
+                                                            )}
+                                                            {(h.reason || h.details?.reason) && (
+                                                                <div style={{ color: 'var(--text-main)', marginTop: 2 }}>
+                                                                    <strong>Reason:</strong> {h.reasonCategory || h.details?.reasonCategory ? `${h.reasonCategory || h.details?.reasonCategory} — ` : ''}{h.reason || h.details?.reason}
+                                                                </div>
+                                                            )}
+                                                            {(h.remarks || h.details?.remarks) && (
+                                                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 2 }}>
+                                                                    <strong>Remarks:</strong> {h.remarks || h.details?.remarks}
                                                                 </div>
                                                             )}
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
+                                                    )}
+
+                                                    {h.details && Object.keys(h.details).length > 0 && !isAdminEvent && (
+                                                        <div className="card-body" style={{ background: 'var(--bg-input)', padding: '1.25rem' }}>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                                                {/* Station Input Fields */}
+                                                                {(() => {
+                                                                    const fields = Object.entries(h.details).filter(([_, v]) => typeof v !== 'object' || v === null);
+                                                                    if (fields.length === 0) return null;
+                                                                    return (
+                                                                        <div className="grid md-grid-2" style={{
+                                                                            columnGap: '2.5rem', rowGap: '0.25rem',
+                                                                            background: 'var(--bg-card)', padding: '1.25rem',
+                                                                            borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)',
+                                                                            boxShadow: 'var(--shadow-sm)'
+                                                                        }}>
+                                                                            {fields.map(([key, val]) => (
+                                                                                <div key={key} style={{
+                                                                                    display: 'flex', justifyContent: 'space-between',
+                                                                                    alignItems: 'center', padding: '0.5rem 0',
+                                                                                    borderBottom: '1px solid var(--border-light)',
+                                                                                }}>
+                                                                                    <span className="text-xs font-bold uppercase text-muted" style={{ letterSpacing: '0.04em' }}>
+                                                                                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                                                                                    </span>
+                                                                                    <span className="font-semibold text-sm text-right" style={{ color: 'var(--text-main)' }}>
+                                                                                        {val?.toString() || '—'}
+                                                                                    </span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+
+                                                                {/* Checklist Fields */}
+                                                                {Object.entries(h.details)
+                                                                    .filter(([k, v]) => typeof v === 'object' && v !== null && k !== 'checkpointImages' && k !== 'tracker')
+                                                                    .map(([key, checklist]) => (
+                                                                        <div key={key} style={{
+                                                                            background: 'var(--bg-card)', borderRadius: 'var(--radius-md)',
+                                                                            border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-sm)',
+                                                                            padding: '1.25rem',
+                                                                        }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                                                                                <ClipboardList size={16} color="var(--primary)" />
+                                                                                <h5 className="text-xs font-bold uppercase text-muted tracking-tight">
+                                                                                    {key.replace(/([A-Z])/g, ' $1').trim()} Inspection
+                                                                                </h5>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                                                {Object.entries(checklist).map(([checkName, checkVal], idx) => (
+                                                                                    <div key={idx} style={{
+                                                                                        display: 'flex', justifyContent: 'space-between',
+                                                                                        alignItems: 'center', padding: '0.75rem 0',
+                                                                                        borderBottom: idx < Object.keys(checklist).length - 1 ? '1px solid var(--border-light)' : 'none',
+                                                                                        gap: '1.5rem'
+                                                                                    }}>
+                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+                                                                                            {checkVal === true ? <Check size={16} strokeWidth={3} color="var(--success)" /> : <X size={16} strokeWidth={3} color="var(--error)" />}
+                                                                                            <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>{checkName}</span>
+                                                                                        </div>
+                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                                            <span className={`status-pill ${checkVal === true ? 'success' : 'error'}`} style={{ fontSize: '0.625rem', minWidth: '55px', justifyContent: 'center' }}>
+                                                                                                {checkVal === true ? 'PASS' : 'FAIL'}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+
+                                                                {/* Checkpoint Images */}
+                                                                {h.details?.checkpointImages && Object.keys(h.details.checkpointImages).length > 0 && (
+                                                                    <div style={{ marginTop: '0.75rem' }}>
+                                                                        <div className="flex items-center gap-2 mb-3 px-1">
+                                                                            <Camera size={14} className="text-primary" />
+                                                                            <span className="text-xs font-bold uppercase text-muted">Media Proofs</span>
+                                                                        </div>
+                                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                                                            {Object.entries(h.details.checkpointImages).map(([label, urls]) => (
+                                                                                urls.map((url, imgIdx) => (
+                                                                                    <div 
+                                                                                        key={`${label}-${imgIdx}`} 
+                                                                                        style={{ position: 'relative', width: 90, height: 60, cursor: 'pointer', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border)' }}
+                                                                                        onClick={() => setSelectedImage({ url, label })}
+                                                                                    >
+                                                                                        <img 
+                                                                                            src={url} 
+                                                                                            alt={label} 
+                                                                                            loading="lazy"
+                                                                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                                                                        />
+                                                                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '2px 4px', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '8px', fontWeight: 'bold' }}>
+                                                                                            {label}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 ));
                             })()}
