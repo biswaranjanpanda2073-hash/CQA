@@ -34,6 +34,7 @@ import QRScanner from './QRScanner';
 import {
     PROJECT_WORKFLOWS,
     REASON_CATEGORIES,
+    normalizeSerialNumbers,
     calculateSkippedStations,
     calculateMovementClassification,
     calculateRiskLevel
