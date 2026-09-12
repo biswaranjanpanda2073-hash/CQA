@@ -181,6 +181,9 @@ export const UserControlSection = ({ user }) => {
         'Peripherals > MOVE TO FG', 'Peripherals > REJECTION REVIEW',
         'Inward QC > RECEIVING', 'Inward QC > IQC',
         'Inward QC > MOVE TO FG', 'Inward QC > REJECTION',
+        'Calculator > RECEIVING', 'Calculator > INITIAL QC', 'Calculator > LOOPER ANALYSIS',
+        'Calculator > HARDWARE QC / DEBUG', 'Calculator > HARDWARE REWORK', 'Calculator > ASSEMBLY',
+        'Calculator > FIRMWARE QC', 'Calculator > PACKING & CLEANING', 'Calculator > SCRAP ANALYSIS',
     ];
 
     const toggleStation = (setter, current, station) => {

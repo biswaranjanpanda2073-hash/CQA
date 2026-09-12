@@ -1,0 +1,691 @@
+/* ==========================================================================
+   CQA MES — Unified Terminal UI System (TerminalUI.css)
+   Standardized Production & QC Workstation Styling
+   Optimized for 100% Browser Zoom on 1280px - 1920px+ Desktop Displays
+   ========================================================================== */
+
+/* ─── 1. Global Terminal Viewport Container ─── */
+.terminal-viewport {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  padding: 1.25rem 1.5rem 6rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.terminal-container {
+  width: 100%;
+  max-width: min(1720px, calc(100vw - 48px));
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-sizing: border-box;
+}
+
+/* ─── 2. Standardized Terminal Header ─── */
+.terminal-header-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.75rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.terminal-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.terminal-header-breadcrumb {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.terminal-header-station-name {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.terminal-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.terminal-unit-pill {
+  font-family: var(--font-mono, monospace);
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0.45rem 1rem;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  letter-spacing: 0.05em;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.terminal-status-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.terminal-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.terminal-status-pill.online {
+  background: var(--success-bg, rgba(16, 185, 129, 0.12));
+  color: var(--success, #059669);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.terminal-status-pill.standby {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  border: 1px solid rgba(100, 116, 139, 0.2);
+}
+
+.terminal-status-pill.warning {
+  background: var(--warning-bg, rgba(245, 158, 11, 0.12));
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.terminal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* ─── 3. Screen Type A: Serial Entry / Scan Terminal ─── */
+.serial-entry-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+@media (min-width: 1024px) {
+  .serial-entry-layout {
+    grid-template-columns: 1.85fr 1fr;
+  }
+}
+
+.serial-scan-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2.5rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2rem;
+  min-height: 480px;
+}
+
+.serial-scan-headline {
+  text-align: center;
+}
+
+.serial-scan-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.serial-scan-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.serial-scan-form {
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.serial-input-wrapper {
+  position: relative;
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.serial-scan-input {
+  flex: 1;
+  height: 64px;
+  font-family: var(--font-mono, monospace);
+  font-size: 1.65rem;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.08em;
+  color: var(--text-main);
+  background: var(--bg-input);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 1rem;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+.serial-scan-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-alpha, rgba(37, 99, 235, 0.15)), inset 0 2px 4px rgba(0, 0, 0, 0.03);
+  background: #ffffff;
+}
+
+.serial-scan-btn {
+  height: 56px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  border-radius: var(--radius-md);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.serial-scan-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Operational Side Panel for Scan Screen */
+.serial-operational-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.operational-tile-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.operational-tile-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operational-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.operational-status-item {
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.operational-status-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.operational-status-val {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.last-processed-card {
+  background: var(--bg-input);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.last-processed-sn {
+  font-family: var(--font-mono, monospace);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.05em;
+}
+
+/* ─── 4. Screen Type B: QC / Inspection Multi-Column Grid ─── */
+.terminal-checkpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Medium screens (1024px to 1439px) -> 2 to 3 columns */
+@media (min-width: 900px) {
+  .terminal-checkpoint-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large desktop (1440px to 1599px) -> 3 columns */
+@media (min-width: 1320px) {
+  .terminal-checkpoint-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Ultra-wide & 1080p desktop (1600px+) -> 4 columns */
+@media (min-width: 1640px) {
+  .terminal-checkpoint-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Checkpoint Card Base */
+.checkpoint-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.15rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.85rem;
+  min-height: 124px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.checkpoint-card:hover {
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+/* Active Checkpoint Focus State (Keyboard / Mouse navigation) */
+.checkpoint-card.active-checkpoint {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2.5px var(--primary-alpha, rgba(37, 99, 235, 0.35)), 0 6px 16px rgba(0, 0, 0, 0.12) !important;
+  position: relative;
+  z-index: 2;
+}
+
+.checkpoint-card.active-checkpoint .checkpoint-card-num {
+  background: var(--primary) !important;
+  color: #ffffff !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 8px var(--primary-alpha, rgba(37, 99, 235, 0.4)) !important;
+}
+
+.checkpoint-active-pill {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--primary-alpha, rgba(37, 99, 235, 0.15));
+  color: var(--primary);
+  border: 1px solid var(--primary-alpha, rgba(37, 99, 235, 0.3));
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.checkpoint-card.card-full-width {
+  grid-column: 1 / -1;
+}
+
+.checkpoint-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.checkpoint-card-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.checkpoint-card-num {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.checkpoint-card-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.checkpoint-required-star {
+  color: var(--error, #ef4444);
+  font-weight: 800;
+}
+
+/* Controls Grid (Pass / Fail / Hold) */
+.checkpoint-control-group {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.checkpoint-control-group.cols-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.checkpoint-control-group.cols-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.checkpoint-control-group.cols-capture {
+  grid-template-columns: 1fr 1fr 1.15fr;
+}
+
+/* Individual PFH Buttons */
+.checkpoint-btn {
+  height: 42px;
+  min-height: 42px;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0 0.5rem;
+  transition: all 0.12s ease-in-out;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+
+.checkpoint-btn:hover {
+  background: var(--border-light);
+  color: var(--text-main);
+}
+
+/* Selected: PASS */
+.checkpoint-btn.selected-pass {
+  background: #10b981 !important;
+  color: #ffffff !important;
+  border-color: #059669 !important;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+}
+
+/* Selected: FAIL */
+.checkpoint-btn.selected-fail {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #dc2626 !important;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.35);
+}
+
+/* Selected: HOLD */
+.checkpoint-btn.selected-hold {
+  background: #f59e0b !important;
+  color: #ffffff !important;
+  border-color: #d97706 !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+}
+
+/* Measurement Checkpoint Field */
+.checkpoint-measurement-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.checkpoint-measurement-input {
+  width: 100%;
+  height: 42px;
+  font-family: var(--font-mono, monospace);
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 3.5rem 0 0.85rem;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+}
+
+.checkpoint-measurement-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--primary-alpha);
+}
+
+.checkpoint-measurement-unit {
+  position: absolute;
+  right: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  background: var(--border-light);
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* Full-width Text Checkpoint (Debug Notes, Inspection Remarks) */
+.checkpoint-textarea {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.checkpoint-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--primary-alpha);
+}
+
+/* ─── 5. Sticky Progress Action Bar ─── */
+.terminal-sticky-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 900;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1.5px solid var(--border);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+[data-theme="dark"] .terminal-sticky-action-bar {
+  background: rgba(15, 23, 42, 0.95);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.4);
+}
+
+.terminal-action-inner {
+  width: 100%;
+  max-width: min(1720px, calc(100vw - 48px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.terminal-progress-summary {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.terminal-progress-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.terminal-progress-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.terminal-progress-bar-wrap {
+  width: 140px;
+  height: 6px;
+  background: var(--border-light);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.terminal-progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  transition: width 0.2s ease;
+}
+
+.terminal-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.terminal-submit-btn {
+  height: 48px;
+  padding: 0 2rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+
+.terminal-reset-btn {
+  height: 48px;
+  padding: 0 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
+
+/* ─── 6. High-Visibility Terminal Alert Banners ─── */
+.terminal-alert-banner {
+  padding: 1rem 1.35rem;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.terminal-alert-banner.error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1.5px solid rgba(239, 68, 68, 0.3);
+  color: var(--error, #ef4444);
+}
+
+.terminal-alert-banner.warning {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1.5px solid rgba(245, 158, 11, 0.3);
+  color: #d97706;
+}
+
+.terminal-alert-banner.info {
+  background: rgba(37, 99, 235, 0.08);
+  border: 1.5px solid rgba(37, 99, 235, 0.3);
+  color: var(--primary);
+}

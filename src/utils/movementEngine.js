@@ -4,6 +4,15 @@
  * skipped station calculation, risk assessment, and data normalization.
  */
 
+import { 
+    CALCULATOR_STATIONS, 
+    CALC_DYNAMIC_FAIL_TARGETS, 
+    CALC_LOOPER_ELIGIBLE_STATIONS, 
+    CALC_STATION_ALLOWED_TARGETS,
+    resolveCalcNextStation,
+    getCalcStationById
+} from './calculatorEngine.js';
+
 export const PROJECT_WORKFLOWS = {
     'Device': [
         { id: 1, name: 'RECEIVING', sequence: 1, type: 'WIP' },
@@ -26,7 +35,8 @@ export const PROJECT_WORKFLOWS = {
         { id: 2, name: 'IQC', sequence: 2, type: 'WIP' },
         { id: 3, name: 'MOVE TO FG', sequence: 3, type: 'TERMINAL_FG' },
         { id: 4, name: 'REJECTION', sequence: 4, type: 'TERMINAL_SCRAP' }
-    ]
+    ],
+    'Calculator': CALCULATOR_STATIONS
 };
 
 export const REASON_CATEGORIES = {
@@ -136,7 +146,7 @@ export const calculateMovementClassification = (fromStationId, toStationId, proj
     const toStation = workflow.find(s => s.id === toStationId);
     const fromStation = workflow.find(s => s.id === fromStationId);
 
-    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject') {
+    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject' || currentStatus === 'SCRAPPED') {
         return 'ADMIN_REOPEN';
     }
 
@@ -162,7 +172,7 @@ export const calculateMovementClassification = (fromStationId, toStationId, proj
  * - High: terminal move (FG / Scrap / Reject) or reopening closed/locked unit
  */
 export const calculateRiskLevel = (fromStationId, toStationId, project, currentStatus, skippedStations = []) => {
-    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject') {
+    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject' || currentStatus === 'SCRAPPED') {
         return 'HIGH';
     }
 
@@ -209,7 +219,7 @@ export const validateUnitRecord = (unit, targetStationId, targetProject, userRol
     }
 
     // Locked check: Scrap or Reject
-    if (unit.status === 'Scrap' || unit.status === 'Reject') {
+    if (unit.status === 'Scrap' || unit.status === 'Reject' || unit.status === 'SCRAPPED') {
         if (userRole !== 'Super Admin') {
             return {
                 isValid: false,
@@ -255,5 +265,178 @@ export const validateUnitRecord = (unit, targetStationId, targetProject, userRol
         isValid: true,
         statusKey: 'READY_TO_MOVE',
         message: 'Unit is valid and eligible for movement.'
+    };
+};
+
+/**
+ * Resolves the default destination station and all permitted alternative destinations
+ * according to the project workflow and Pass/Fail/Hold results.
+ */
+export const getValidDestinationStations = (currentStationId, project = 'Device', result = 'Pass', decision = null, currentUnit = null) => {
+    const workflow = PROJECT_WORKFLOWS[project] || PROJECT_WORKFLOWS['Device'];
+    const currentStation = workflow.find(s => s.id === Number(currentStationId));
+
+    if (!currentStation) {
+        return { defaultStation: null, availableStations: [], isHold: false };
+    }
+
+    // ── HOLD: Blocks all forward/backward movement ──
+    if (result === 'Hold') {
+        return {
+            defaultStation: null,
+            availableStations: [],
+            isHold: true,
+            reason: 'HOLD — Movement blocked. Unit remains at current station.'
+        };
+    }
+
+    // ── CALCULATOR REFURBISHMENT ──
+    if (project === 'Calculator') {
+        const calcRes = resolveCalcNextStation(Number(currentStationId), result, currentUnit, null);
+        let defaultStId = calcRes?.nextStationId;
+        
+        if (!defaultStId && calcRes?.needsSelection) {
+            // Dynamic default based on station
+            if (Number(currentStationId) === 3) defaultStId = 6; // Looper -> Assembly
+            else if (Number(currentStationId) === 7) defaultStId = 5; // Firmware QC Fail -> Hardware Rework
+            else if (Number(currentStationId) === 8) defaultStId = 7; // Packing Fail -> Firmware QC
+        }
+
+        const defaultStationObj = defaultStId ? getCalcStationById(defaultStId) : null;
+        const allowedTargets = CALC_STATION_ALLOWED_TARGETS[Number(currentStationId)]?.[result] || (defaultStId ? [defaultStId] : []);
+        const uniqueIds = Array.from(new Set([defaultStId, ...allowedTargets].filter(Boolean)));
+        
+        const availableStations = uniqueIds
+            .map(id => getCalcStationById(id))
+            .filter(Boolean)
+            .map(s => ({
+                id: s.id,
+                name: s.name,
+                type: s.type || 'WIP',
+                isDefault: s.id === defaultStId,
+                sequence: s.sequence
+            }))
+            .sort((a, b) => {
+                if (a.isDefault) return -1;
+                if (b.isDefault) return 1;
+                return (a.sequence || 0) - (b.sequence || 0);
+            });
+
+        return {
+            defaultStation: defaultStationObj ? { id: defaultStationObj.id, name: defaultStationObj.name, type: defaultStationObj.type } : availableStations[0] || null,
+            availableStations,
+            isHold: false,
+            reason: calcRes?.reason || 'Calculated from Calculator workflow'
+        };
+    }
+
+    // ── NON-CALCULATOR WORKFLOWS (Device, Refurbishment, Peripherals, Inward QC) ──
+    let defaultNextId = null;
+    let allowedIds = [];
+
+    if (project === 'Device' || project === 'Refurbishment') {
+        switch (Number(currentStationId)) {
+            case 1: // RECEIVING
+                defaultNextId = 2; // INSPECTION
+                allowedIds = [2];
+                break;
+            case 2: // INSPECTION
+                if (result === 'Pass') {
+                    defaultNextId = 5; // FINAL QC
+                    allowedIds = [5, 3, 4]; // Final QC, Debug, Rework
+                } else {
+                    defaultNextId = decision === 'scrap_review' ? 8 : 3;
+                    allowedIds = [3, 4, 8];
+                }
+                break;
+            case 3: // DEBUG
+                if (result === 'Pass') {
+                    defaultNextId = 4; // REWORK
+                    allowedIds = [4, 5];
+                } else {
+                    defaultNextId = 8; // SCRAP REVIEW
+                    allowedIds = [8, 4];
+                }
+                break;
+            case 4: // REWORK
+                if (result === 'Pass') {
+                    defaultNextId = 5; // FINAL QC
+                    allowedIds = [5, 3];
+                } else {
+                    defaultNextId = 3; // DEBUG
+                    allowedIds = [3, 8];
+                }
+                break;
+            case 5: // FINAL QC
+                if (result === 'Pass') {
+                    defaultNextId = 6; // PACKING
+                    allowedIds = [6];
+                } else {
+                    defaultNextId = 3; // DEBUG
+                    allowedIds = [3, 4, 8];
+                }
+                break;
+            case 6: // PACKING
+                if (result === 'Pass') {
+                    defaultNextId = 7; // MOVE TO FG
+                    allowedIds = [7];
+                } else {
+                    defaultNextId = 5; // Return to Final QC
+                    allowedIds = [5, 4];
+                }
+                break;
+            case 7: // MOVE TO FG
+            case 8: // SCRAP REVIEW
+            default:
+                defaultNextId = null;
+                allowedIds = [];
+        }
+    } else {
+        // Peripherals & Inward QC
+        switch (Number(currentStationId)) {
+            case 1:
+                defaultNextId = 2;
+                allowedIds = [2];
+                break;
+            case 2:
+                if (result === 'Pass') {
+                    defaultNextId = 3; // MOVE TO FG
+                    allowedIds = [3];
+                } else {
+                    defaultNextId = 4; // REJECTION
+                    allowedIds = [4];
+                }
+                break;
+            case 3:
+            case 4:
+            default:
+                defaultNextId = null;
+                allowedIds = [];
+        }
+    }
+
+    const defaultStationObj = defaultNextId ? workflow.find(s => s.id === defaultNextId) : null;
+    const uniqueIds = Array.from(new Set([defaultNextId, ...allowedIds].filter(Boolean)));
+    const availableStations = uniqueIds
+        .map(id => workflow.find(s => s.id === id))
+        .filter(Boolean)
+        .map(s => ({
+            id: s.id,
+            name: s.name,
+            type: s.type || 'WIP',
+            isDefault: s.id === defaultNextId,
+            sequence: s.sequence
+        }))
+        .sort((a, b) => {
+            if (a.isDefault) return -1;
+            if (b.isDefault) return 1;
+            return (a.sequence || 0) - (b.sequence || 0);
+        });
+
+    return {
+        defaultStation: defaultStationObj ? { id: defaultStationObj.id, name: defaultStationObj.name, type: defaultStationObj.type } : availableStations[0] || null,
+        availableStations,
+        isHold: false,
+        reason: `Standard workflow route for ${project}`
     };
 };

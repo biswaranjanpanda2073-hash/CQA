@@ -26,13 +26,26 @@ import {
     ChevronDown,
     Camera,
     Plus,
-    Loader2
+    Loader2,
+    Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import { useCQA } from '../hooks/useCQA';
 import QRScanner from './QRScanner';
 import ImageCapture from './ImageCapture';
+import { CALCULATOR_UI_STATIONS } from '../utils/calculatorEngine';
+import { getValidDestinationStations } from '../utils/movementEngine';
+import CalculatorStationForm from './CalculatorStationForm';
+import { 
+    TerminalLayout, 
+    TerminalHeader, 
+    SerialEntryTerminal, 
+    CheckpointGrid, 
+    CheckpointCard, 
+    ProgressActionBar,
+    useCheckpointNavigation
+} from './terminal';
 
 
 const DEVICE_STATIONS = [
@@ -133,7 +146,7 @@ const PROJECT_STATION_MAP = {
     'Device':     DEVICE_STATIONS,
     'Peripherals': PERIPHERAL_STATIONS,
     'Inward QC':  INWARD_QC_STATIONS,
-    'Calculator': [], // Coming Soon — no stations yet
+    'Calculator': CALCULATOR_UI_STATIONS,
 };
 const ACTIVE_PROJECTS = ['Device', 'Peripherals', 'Inward QC', 'Calculator'];
 
@@ -147,19 +160,21 @@ const Stations = ({ user }) => {
     const [accessDenied, setAccessDenied] = useState(false);
 
     // ── WIP data (kept for station status display inside dropdowns) ──
-    const [wipData, setWipData] = React.useState({ 'Device': {}, 'Peripherals': {}, 'Inward QC': {} });
+    const [wipData, setWipData] = React.useState({ 'Device': {}, 'Peripherals': {}, 'Inward QC': {}, 'Calculator': {} });
 
     React.useEffect(() => {
         const loadMetrics = async () => {
-            const [deviceMetrics, periphMetrics, iqcMetrics] = await Promise.all([
+            const [deviceMetrics, periphMetrics, iqcMetrics, calcMetrics] = await Promise.all([
                 fetchStationMetrics('Device'),
                 fetchStationMetrics('Peripherals'),
-                fetchStationMetrics('Inward QC')
+                fetchStationMetrics('Inward QC'),
+                fetchStationMetrics('Calculator')
             ]);
             setWipData({
                 'Device': deviceMetrics.wipBreakdown || {},
                 'Peripherals': periphMetrics.wipBreakdown || {},
-                'Inward QC': iqcMetrics.wipBreakdown || {}
+                'Inward QC': iqcMetrics.wipBreakdown || {},
+                'Calculator': calcMetrics.wipBreakdown || {}
             });
         };
         loadMetrics();
@@ -171,7 +186,6 @@ const Stations = ({ user }) => {
 
     // ── Derive available stations for selected project ──
     const availableStations = selectedProject ? (PROJECT_STATION_MAP[selectedProject] || []) : [];
-    const isCalculator = selectedProject === 'Calculator';
 
     // ── Reset station when project changes ──
     const handleProjectChange = (e) => {
@@ -182,7 +196,7 @@ const Stations = ({ user }) => {
 
     // ── Enter handler: reuse existing access + open logic ──
     const handleEnter = () => {
-        if (!selectedProject || !selectedStation || isCalculator) return;
+        if (!selectedProject || !selectedStation) return;
         const station = availableStations.find(s => String(s.id) === selectedStation);
         if (!station) return;
 
@@ -196,7 +210,7 @@ const Stations = ({ user }) => {
         window.open(url, '_blank');
     };
 
-    const canEnter = selectedProject && selectedStation && !isCalculator;
+    const canEnter = Boolean(selectedProject && selectedStation);
     const selectedStationObj = availableStations.find(s => String(s.id) === selectedStation);
 
     // ── renderProjectSection kept intact (used by StationExecutionView tab) ──
@@ -381,66 +395,44 @@ const Stations = ({ user }) => {
                                     id="op-station-select"
                                     value={selectedStation}
                                     onChange={e => { setSelectedStation(e.target.value); setAccessDenied(false); }}
-                                    disabled={!selectedProject || isCalculator}
+                                    disabled={!selectedProject}
                                     style={{
                                         width: '100%',
                                         padding: '0.75rem 2.5rem 0.75rem 1rem',
                                         borderRadius: '0.625rem',
-                                        border: `1.5px solid ${isCalculator ? '#f59e0b' : selectedStation ? 'var(--primary)' : 'var(--border)'}`,
-                                        background: !selectedProject ? 'var(--bg-hover)' : isCalculator ? 'rgba(245,158,11,0.06)' : 'var(--bg-input)',
-                                        color: isCalculator ? '#d97706' : selectedStation ? 'var(--text-main)' : 'var(--text-muted)',
+                                        border: `1.5px solid ${selectedStation ? 'var(--primary)' : 'var(--border)'}`,
+                                        background: !selectedProject ? 'var(--bg-hover)' : 'var(--bg-input)',
+                                        color: selectedStation ? 'var(--text-main)' : 'var(--text-muted)',
                                         fontSize: '0.9rem',
-                                        fontWeight: isCalculator ? 600 : selectedStation ? 600 : 400,
+                                        fontWeight: selectedStation ? 600 : 400,
                                         fontFamily: 'var(--font-sans)',
                                         appearance: 'none',
-                                        cursor: (selectedProject && !isCalculator) ? 'pointer' : 'not-allowed',
+                                        cursor: selectedProject ? 'pointer' : 'not-allowed',
                                         outline: 'none',
                                         opacity: selectedProject ? 1 : 0.6,
                                         transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s',
-                                        boxShadow: isCalculator ? '0 0 0 3px rgba(245,158,11,0.15)' : selectedStation ? '0 0 0 3px var(--primary-alpha)' : 'none',
+                                        boxShadow: selectedStation ? '0 0 0 3px var(--primary-alpha)' : 'none',
                                     }}
                                 >
-                                    {isCalculator ? (
-                                        <option value="">🚧 Coming Soon — Stations not yet available</option>
-                                    ) : (
-                                        <>
-                                            <option value="">— Choose a Station —</option>
-                                            {availableStations.map(s => {
-                                                const wip = getStationWip(selectedProject, s.name);
-                                                const permitted = hasAccess(user, selectedProject, s.name);
-                                                return (
-                                                    <option key={s.id} value={String(s.id)}>
-                                                        {getDisplayName('stations', s.name)}{wip > 0 ? ` · ${wip} WIP` : ''}{!permitted ? ' 🔒' : ''}
-                                                    </option>
-                                                );
-                                            })}
-                                        </>
-                                    )}
+                                    <option value="">— Choose a Station —</option>
+                                    {availableStations.map(s => {
+                                        const wip = getStationWip(selectedProject, s.name);
+                                        const permitted = hasAccess(user, selectedProject, s.name);
+                                        return (
+                                            <option key={s.id} value={String(s.id)}>
+                                                {getDisplayName('stations', s.name)}{wip > 0 ? ` · ${wip} WIP` : ''}{!permitted ? ' 🔒' : ''}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
-                                <ChevronDown size={16} color={isCalculator ? '#d97706' : 'var(--text-muted)'} style={{
+                                <ChevronDown size={16} color="var(--text-muted)" style={{
                                     position: 'absolute', right: '0.875rem', top: '50%',
                                     transform: 'translateY(-50%)', pointerEvents: 'none',
                                 }} />
                             </div>
 
-                            {/* Coming Soon banner for Calculator */}
-                            {isCalculator && (
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                    marginTop: '0.5rem',
-                                    padding: '0.5rem 0.75rem',
-                                    borderRadius: '0.5rem',
-                                    background: 'rgba(245,158,11,0.08)',
-                                    border: '1px dashed #f59e0b',
-                                }}>
-                                    <span style={{ fontSize: '0.78rem', color: '#d97706', fontWeight: 600 }}>
-                                        🧮 Calculator is under development. Process flow is being finalized.
-                                    </span>
-                                </div>
-                            )}
-
-                            {/* Station info pill for normal projects */}
-                            {selectedStationObj && !isCalculator && (
+                            {/* Station info pill */}
+                            {selectedStationObj && (
                                 <div style={{
                                     display: 'flex', alignItems: 'center', gap: '0.5rem',
                                     marginTop: '0.5rem', flexWrap: 'wrap',
@@ -531,11 +523,9 @@ const Stations = ({ user }) => {
                             onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
                         >
                             <ArrowRight size={18} />
-                            {isCalculator
-                                ? '🚧 Under Development — Coming Soon'
-                                : canEnter
-                                    ? `Enter — ${getDisplayName('stations', selectedStationObj?.name)}`
-                                    : 'Select Project & Station to Continue'}
+                            {canEnter
+                                ? `Enter — ${getDisplayName('stations', selectedStationObj?.name)}`
+                                : 'Select Project & Station to Continue'}
                         </button>
 
                         {/* Helper note */}
@@ -557,19 +547,16 @@ const Stations = ({ user }) => {
                         flexWrap: 'wrap',
                     }}>
                         {ACTIVE_PROJECTS.map(p => {
-                            const stationList = PROJECT_STATION_MAP[p];
-                            const isCalcProject = p === 'Calculator';
-                            const totalWip = isCalcProject ? 0 : stationList.reduce((sum, s) => sum + getStationWip(p, s.name), 0);
+                            const stationList = PROJECT_STATION_MAP[p] || [];
+                            const totalWip = stationList.reduce((sum, s) => sum + getStationWip(p, s.name), 0);
                             return (
                                 <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                                        {isCalcProject ? '🧮 Calculator' : getDisplayName('projects', p)}
+                                        {getDisplayName('projects', p)}
                                     </span>
-                                    {isCalcProject
-                                        ? <span style={{ fontSize: '0.62rem', padding: '0.1rem 0.4rem', borderRadius: '999px', background: 'rgba(245,158,11,0.12)', color: '#d97706', fontWeight: 700 }}>Soon</span>
-                                        : totalWip > 0
-                                            ? <span className="status-pill warning" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem' }}>{totalWip} WIP</span>
-                                            : <span className="status-pill info" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem' }}>Idle</span>
+                                    {totalWip > 0
+                                        ? <span className="status-pill warning" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem' }}>{totalWip} WIP</span>
+                                        : <span className="status-pill info" style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem' }}>Idle</span>
                                     }
                                 </div>
                             );
@@ -583,17 +570,27 @@ const Stations = ({ user }) => {
 
 // ─── Standalone View for Terminal Tabs ───
 export const StationExecutionView = ({ stationId, project, user }) => {
-    const { validateScan, processUnit, getUnit, store, getDisplayName, getProjectCategory } = useCQA();
+    const { validateScan, processUnit, getUnit, store, getDisplayName, getProjectCategory, unholdCalculatorSerial } = useCQA();
     const [scannedId, setScannedId] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isValidating, setIsValidating] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [showSuccess, setShowSuccess] = useState(false);
     const [lastProcessed, setLastProcessed] = useState('');
     const [showScanner, setShowScanner] = useState(false);
     const [activeUnit, setActiveUnit] = useState(null);
+    const [destinationModal, setDestinationModal] = useState({
+        isOpen: false,
+        pendingData: null,
+        overrideId: null,
+        destinations: null,
+        selectedStationId: null
+    });
+    const [isSubmittingMove, setIsSubmittingMove] = useState(false);
+    const [showStationConfig, setShowStationConfig] = useState(false);
 
     const projectCategory = getProjectCategory(project);
-    const stations = projectCategory === 'Device' ? DEVICE_STATIONS : (projectCategory === 'Peripherals' ? PERIPHERAL_STATIONS : INWARD_QC_STATIONS);
+    const stations = projectCategory === 'Device' ? DEVICE_STATIONS : (projectCategory === 'Peripherals' ? PERIPHERAL_STATIONS : (projectCategory === 'Calculator' ? CALCULATOR_UI_STATIONS : INWARD_QC_STATIONS));
     const selectedStation = stations.find(s => s.id === stationId);
     const permitted = selectedStation && hasAccess(user, project, selectedStation.name);
 
@@ -610,41 +607,94 @@ export const StationExecutionView = ({ stationId, project, user }) => {
         const cleanId = scannedId.trim().toUpperCase().replace(/\//g, '-');
         if (!cleanId) return;
 
-        const validation = await validateScan(cleanId, selectedStation, project);
-        if (validation.success) {
+        setIsValidating(true);
+        try {
             const unit = await getUnit(cleanId);
             setActiveUnit(unit);
-            
-            if (validation.prompt) {
-                if (window.confirm(validation.prompt)) setIsProcessing(true);
+
+            const validation = await validateScan(cleanId, selectedStation, project);
+            if (validation.success) {
+                if (validation.prompt) {
+                    if (window.confirm(validation.prompt)) setIsProcessing(true);
+                } else {
+                    setIsProcessing(true);
+                }
+                setErrorMessage('');
             } else {
-                setIsProcessing(true);
+                setErrorMessage(validation.message);
             }
-            setErrorMessage('');
-        } else {
-            setErrorMessage(validation.message);
+        } catch (err) {
+            setErrorMessage(err.message || 'Validation error');
+        } finally {
+            setIsValidating(false);
+        }
+    };
+
+    const executeCompletion = async (data, targetStationId, overrideId) => {
+        if (isSubmittingMove) return;
+        setIsSubmittingMove(true);
+        try {
+            const targetId = (overrideId || scannedId).trim().toUpperCase().replace(/\//g, '-');
+            const targetStationObj = destinationModal.destinations?.availableStations?.find(s => s.id === Number(targetStationId)) || destinationModal.destinations?.defaultStation;
+
+            const result = await processUnit(targetId, {
+                ...data,
+                station: selectedStation,
+                project: project,
+                targetStationId: targetStationObj?.id || targetStationId,
+                targetStationName: targetStationObj?.name,
+                operator: user?.name || user?.id || JSON.parse(localStorage.getItem('cqa_user') || '{}')?.name || 'SYSTEM_ADMIN'
+            });
+
+            if (result) {
+                setDestinationModal({ isOpen: false, pendingData: null, overrideId: null, destinations: null, selectedStationId: null });
+                setLastProcessed(targetId);
+                if (selectedStation.id !== 1 || !overrideId) setShowSuccess(true);
+            }
+        } finally {
+            setIsSubmittingMove(false);
         }
     };
 
     const handleComplete = async (data, overrideId) => {
-        const targetId = (overrideId || scannedId).trim().toUpperCase().replace(/\//g, '-');
-        const result = await processUnit(targetId, {
-            ...data,
-            station: selectedStation,
-            project: project,
-            operator: user?.name || user?.id || JSON.parse(localStorage.getItem('cqa_user') || '{}')?.name || 'SYSTEM_ADMIN'
-        });
-        if (result) {
-            setLastProcessed(targetId);
-            if (selectedStation.id !== 1 || !overrideId) setShowSuccess(true);
+        // HOLD result remains at current station — no destination selection required
+        if (data?.result === 'Hold') {
+            await executeCompletion(data, selectedStation.id, overrideId);
+            return;
+        }
+
+        // Resolve valid destinations according to workflow
+        const destinations = getValidDestinationStations(
+            selectedStation.id,
+            project,
+            data?.result || 'Pass',
+            data?.decision,
+            activeUnit
+        );
+
+        // If multiple valid destinations exist, prompt operator with default pre-selected
+        if (destinations?.availableStations && destinations.availableStations.length > 1) {
+            setDestinationModal({
+                isOpen: true,
+                pendingData: data,
+                overrideId,
+                destinations,
+                selectedStationId: destinations.defaultStation?.id || destinations.availableStations[0]?.id
+            });
+        } else {
+            // Only 1 valid destination: proceed directly with default
+            await executeCompletion(data, destinations?.defaultStation?.id, overrideId);
         }
     };
 
     const handleReset = () => {
         setIsProcessing(false);
         setScannedId('');
+        setActiveUnit(null);
         setErrorMessage('');
         setShowSuccess(false);
+        setDestinationModal({ isOpen: false, pendingData: null, overrideId: null, destinations: null, selectedStationId: null });
+        setShowStationConfig(false);
     };
 
     if (!selectedStation) return (
@@ -673,10 +723,10 @@ export const StationExecutionView = ({ stationId, project, user }) => {
     }
 
     return (
-        <div style={{ minHeight: '100vh', background: 'var(--bg-main)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1rem' }}>
+        <TerminalLayout>
             <AnimatePresence mode="wait">
                 {showSuccess ? (
-                    <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ width: '100%', maxWidth: 500, margin: 'auto' }} onAnimationComplete={() => setTimeout(handleReset, 2000)}>
+                    <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ width: '100%', maxWidth: 540, margin: 'auto' }} onAnimationComplete={() => setTimeout(handleReset, 2000)}>
                         <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
                             <CheckCircle2 size={80} color="var(--primary)" style={{ margin: '0 auto 1.5rem' }} />
                             <h1 className="font-extrabold" style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>Transaction Complete</h1>
@@ -692,73 +742,71 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                         </div>
                     </motion.div>
                 ) : (
-                    <div style={{ width: '100%', maxWidth: 960, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {/* Terminal Header */}
-                        <div className="card" style={{ padding: '1rem 1.5rem' }}>
-                            <div className="flex-between">
-                                <div>
-                                    <div className="text-xs uppercase font-bold" style={{ color: 'var(--primary)', letterSpacing: '0.06em' }}>
-                                        {getDisplayName('projects', project)} / Terminal {selectedStation.id}
-                                    </div>
-                                    <h1 className="font-extrabold" style={{ fontSize: '1.375rem', marginTop: 2 }}>
-                                        {getDisplayName('stations', selectedStation.name)}
-                                    </h1>
+                    <>
+                        {/* Standardized Terminal Header */}
+                        <TerminalHeader
+                            projectName={getDisplayName('projects', project)}
+                            terminalId={selectedStation.id}
+                            stationName={getDisplayName('stations', selectedStation.name)}
+                            unitId={scannedId}
+                            user={user}
+                            scannerActive={true}
+                            backendOnline={true}
+                            stationStatus="Operational"
+                            extraMeta={
+                                <button
+                                    type="button"
+                                    onClick={() => setShowStationConfig(true)}
+                                    className="terminal-status-pill standby"
+                                    title="Station Configuration & Operational Controls"
+                                    style={{
+                                        cursor: 'pointer',
+                                        border: '1px solid var(--border-color, #e5e7eb)',
+                                        background: 'var(--bg-card, #ffffff)',
+                                        color: 'var(--text-primary, #111827)',
+                                        fontWeight: 600,
+                                        gap: '5px',
+                                        padding: '3px 9px',
+                                        fontSize: '0.78rem',
+                                        display: 'inline-flex',
+                                        alignItems: 'center'
+                                    }}
+                                >
+                                    <Settings size={13} style={{ color: 'var(--primary, #0ea5e9)' }} />
+                                    <span>Station Config</span>
+                                </button>
+                            }
+                        />
 
-                                </div>
-                                <div className="status-indicator" style={{
-                                    padding: '0.4rem 0.75rem',
-                                    background: 'var(--success-bg)',
-                                    borderRadius: 'var(--radius-full)',
-                                }}>
-                                    <div className="status-dot online"></div>
-                                    <span style={{ color: 'var(--success)' }}>Live</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Scan or Form */}
+                        {/* Screen Type A: Scan / Serial Entry Terminal */}
                         {!isProcessing && selectedStation.id !== 1 ? (
-                            <div className="card animate-fade-in" style={{ padding: '4rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div className="flex-center" style={{ width: 72, height: 72, background: 'var(--primary-alpha)', borderRadius: '50%', margin: '0 auto 1.25rem' }}>
-                                        <Scan size={36} color="var(--primary)" />
-                                    </div>
-                                    <h3 className="font-extrabold" style={{ fontSize: '1.5rem', marginBottom: '0.35rem' }}>Ready to Scan</h3>
-                                    <p className="text-muted font-semibold">Enter serial number to begin</p>
-                                </div>
-
-                                <form onSubmit={handleScan} style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            placeholder="Scan serial..."
-                                            value={scannedId}
-                                            onChange={e => setScannedId(e.target.value.toUpperCase().replace(/\//g, '-'))}
-                                            className="text-mono"
-                                            style={{
-                                                flex: 1,
-                                                height: 64,
-                                                fontSize: '1.75rem',
-                                                textAlign: 'center',
-                                                fontWeight: 800,
-                                                letterSpacing: '0.08em'
-                                            }}
-                                        />
-                                        <button
-                                            type="button"
-                                            className="btn-scanner"
-                                            style={{ height: 64, width: 64 }}
-                                            onClick={() => setShowScanner(true)}
-                                            title="Scan with camera"
-                                        >
-                                            <Scan size={28} />
-                                        </button>
-                                    </div>
-                                    <button type="submit" className="btn btn-primary" style={{ height: 56, fontSize: '1rem' }}>
-                                        Process Unit
-                                    </button>
-                                </form>
+                            <>
+                                <SerialEntryTerminal
+                                    scannedId={scannedId}
+                                    setScannedId={setScannedId}
+                                    onSubmit={handleScan}
+                                    onCameraScanClick={() => setShowScanner(true)}
+                                    isValidating={isValidating}
+                                    errorMessage={errorMessage}
+                                    activeUnit={activeUnit}
+                                    onUnhold={async () => {
+                                        if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
+                                            const res = await unholdCalculatorSerial(activeUnit.id);
+                                            if (res.success) {
+                                                alert(`Unit "${activeUnit.id}" has been unheld.`);
+                                                handleReset();
+                                            } else {
+                                                alert(`Unhold error: ${res.message}`);
+                                            }
+                                        }
+                                    }}
+                                    canUnhold={user?.role === 'Admin' || user?.role === 'Super Admin' || hasAccess(user, 'Calculator', activeUnit?.holdStation)}
+                                    unholdStation={activeUnit?.holdStation}
+                                    lastProcessed={lastProcessed}
+                                    stationName={getDisplayName('stations', selectedStation.name)}
+                                    projectName={getDisplayName('projects', project)}
+                                    terminalId={selectedStation.id}
+                                />
 
                                 {showScanner && (
                                     <QRScanner
@@ -766,52 +814,418 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                         onClose={() => setShowScanner(false)}
                                     />
                                 )}
+                            </>
+                        ) : (
+                            <div className="animate-fade-in" style={{ width: '100%' }}>
+                                {projectCategory === 'Calculator' && selectedStation.id !== 1 ? (
+                                    <CalculatorStationForm
+                                        key={`${selectedStation.id}-${scannedId}`}
+                                        project={project}
+                                        station={selectedStation}
+                                        unitId={scannedId}
+                                        unitData={activeUnit}
+                                        user={user}
+                                        onComplete={handleComplete}
+                                        onReset={handleReset}
+                                        getDisplayName={getDisplayName}
+                                    />
+                                ) : (
+                                    <StationForm
+                                        key={`${selectedStation.id}-${scannedId}`}
+                                        project={project}
+                                        station={selectedStation}
+                                        unitId={scannedId || 'BATCH'}
+                                        unitData={activeUnit}
+                                        onComplete={handleComplete}
+                                        onBulkComplete={() => { setLastProcessed("BATCH"); setShowSuccess(true); }}
+                                        onReset={handleReset}
+                                        getDisplayName={getDisplayName}
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </>
+                )}
+            </AnimatePresence>
 
+            {/* ═══ MODAL 1: DESTINATION STATION SELECTION (Post-Validation Completion) ═══ */}
+            {destinationModal.isOpen && (
+                <div 
+                    className="terminal-modal-backdrop"
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 99999,
+                        padding: '1rem',
+                        animation: 'fadeIn 0.15s ease'
+                    }}
+                >
+                    <div 
+                        className="terminal-modal-card card" 
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="destination-modal-title"
+                        style={{
+                            width: '100%',
+                            maxWidth: 500,
+                            background: 'var(--bg-card, #ffffff)',
+                            borderRadius: '12px',
+                            boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+                            overflow: 'hidden',
+                            border: '1px solid var(--border-color, #e5e7eb)'
+                        }}
+                    >
+                        <div style={{
+                            padding: '1.25rem 1.5rem',
+                            borderBottom: '1px solid var(--border-color, #e5e7eb)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'var(--bg-main, #f9fafb)'
+                        }}>
+                            <div>
+                                <h3 id="destination-modal-title" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    Station Complete — Select Destination
+                                </h3>
+                                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                    Recommended next station is pre-selected. Override only if necessary.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setDestinationModal({ isOpen: false, pendingData: null, overrideId: null, destinations: null, selectedStationId: null })}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
 
-                                {errorMessage && (
-                                    <div className="animate-fade-in" style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.75rem',
-                                        padding: '1rem 1.25rem',
-                                        background: 'var(--error-bg)',
-                                        borderRadius: 'var(--radius-md)',
-                                        border: '1px solid rgba(220,38,38,0.2)',
-                                        color: 'var(--error)',
-                                        width: '100%',
-                                        maxWidth: 420,
-                                    }}>
-                                        <AlertTriangle size={20} />
-                                        <span className="font-bold text-sm">{errorMessage}</span>
+                        <div style={{ padding: '1.25rem 1.5rem' }}>
+                            {/* Unit & Result Summary */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '0.75rem 1rem',
+                                background: 'var(--bg-main, #f3f4f6)',
+                                borderRadius: '8px',
+                                marginBottom: '1.25rem'
+                            }}>
+                                <div>
+                                    <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>Serial Number</span>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.95rem' }}>
+                                        {destinationModal.overrideId || scannedId}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>Station Result</span>
+                                    <span className={`terminal-status-pill ${destinationModal.pendingData?.result === 'Pass' ? 'online' : 'warning'}`} style={{ fontWeight: 800, fontSize: '0.8rem', padding: '2px 8px' }}>
+                                        {destinationModal.pendingData?.result || 'PASS'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Destination Options */}
+                            <div style={{ marginBottom: '1.25rem' }}>
+                                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem', color: 'var(--text-primary)' }}>
+                                    Move SN to Station:
+                                </label>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '240px', overflowY: 'auto' }}>
+                                    {destinationModal.destinations?.availableStations?.map(dest => {
+                                        const isSelected = destinationModal.selectedStationId === dest.id;
+                                        const isRecommended = dest.isDefault;
+
+                                        return (
+                                            <label
+                                                key={dest.id}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    padding: '0.75rem 1rem',
+                                                    borderRadius: '8px',
+                                                    border: `1.5px solid ${isSelected ? 'var(--primary, #0ea5e9)' : 'var(--border-color, #e5e7eb)'}`,
+                                                    background: isSelected ? 'rgba(14, 165, 233, 0.07)' : 'var(--bg-card, #ffffff)',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                    <input
+                                                        type="radio"
+                                                        name="destinationStation"
+                                                        value={dest.id}
+                                                        checked={isSelected}
+                                                        onChange={() => setDestinationModal(prev => ({ ...prev, selectedStationId: dest.id }))}
+                                                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                                                    />
+                                                    <div>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: isSelected ? 'var(--primary, #0ea5e9)' : 'var(--text-primary)' }}>
+                                                            {dest.name}
+                                                        </div>
+                                                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                                            {dest.type === 'TERMINAL_FG' ? 'Terminal (Finish Good)' : (dest.type === 'TERMINAL_SCRAP' ? 'Terminal (Scrap)' : 'WIP Station')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {isRecommended && (
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 800,
+                                                        padding: '2px 7px',
+                                                        borderRadius: '4px',
+                                                        background: 'rgba(16, 185, 129, 0.12)',
+                                                        color: '#059669',
+                                                        border: '1px solid rgba(16, 185, 129, 0.25)'
+                                                    }}>
+                                                        Recommended
+                                                    </span>
+                                                )}
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color, #e5e7eb)' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setDestinationModal({ isOpen: false, pendingData: null, overrideId: null, destinations: null, selectedStationId: null })}
+                                    disabled={isSubmittingMove}
+                                    style={{ height: 42, padding: '0 1.25rem' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => executeCompletion(destinationModal.pendingData, destinationModal.selectedStationId, destinationModal.overrideId)}
+                                    disabled={isSubmittingMove || !destinationModal.selectedStationId}
+                                    autoFocus
+                                    style={{ height: 42, padding: '0 1.5rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                                >
+                                    {isSubmittingMove ? (
+                                        <>
+                                            <Loader2 size={16} className="animate-spin" />
+                                            <span>Moving SN...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check size={18} />
+                                            <span>Confirm & Move</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ═══ MODAL 2: STATION CONFIGURATION & OPERATOR CONTROLS ═══ */}
+            {showStationConfig && (
+                <div 
+                    className="terminal-modal-backdrop"
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 99999,
+                        padding: '1rem',
+                        animation: 'fadeIn 0.15s ease'
+                    }}
+                >
+                    <div 
+                        className="terminal-modal-card card" 
+                        role="dialog"
+                        aria-modal="true"
+                        style={{
+                            width: '100%',
+                            maxWidth: 480,
+                            background: 'var(--bg-card, #ffffff)',
+                            borderRadius: '12px',
+                            boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+                            overflow: 'hidden',
+                            border: '1px solid var(--border-color, #e5e7eb)'
+                        }}
+                    >
+                        <div style={{
+                            padding: '1.25rem 1.5rem',
+                            borderBottom: '1px solid var(--border-color, #e5e7eb)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'var(--bg-main, #f9fafb)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <Settings size={18} style={{ color: 'var(--primary)' }} />
+                                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                    Station Configuration & Controls
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowStationConfig(false)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '1.25rem 1.5rem' }}>
+                            {/* Station & SN Overview */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                                <div style={{ padding: '0.65rem 0.85rem', background: 'var(--bg-main)', borderRadius: 8 }}>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block' }}>CURRENT STATION</span>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        {getDisplayName('stations', selectedStation.name)} ({selectedStation.id})
+                                    </span>
+                                </div>
+                                <div style={{ padding: '0.65rem 0.85rem', background: 'var(--bg-main)', borderRadius: 8 }}>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block' }}>ACTIVE UNIT</span>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                                        {scannedId || activeUnit?.id || 'None'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Section A: Controlled Hold / Unhold */}
+                            <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: '1.25rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>Hold Status & Control</span>
+                                    {activeUnit?.holdStatus === 'HOLD' ? (
+                                        <span className="terminal-status-pill warning" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                                            ON HOLD ({activeUnit.holdStation})
+                                        </span>
+                                    ) : (
+                                        <span className="terminal-status-pill online" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                                            ACTIVE (No Hold)
+                                        </span>
+                                    )}
+                                </div>
+
+                                {activeUnit?.holdStatus === 'HOLD' ? (
+                                    <div>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.25rem 0 0.75rem' }}>
+                                            Reason: {activeUnit.holdReason || 'Inspection Hold'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            style={{ width: '100%', height: 38, fontSize: '0.85rem', fontWeight: 700 }}
+                                            onClick={async () => {
+                                                if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
+                                                    const res = await unholdCalculatorSerial(activeUnit.id);
+                                                    if (res.success) {
+                                                        alert(`Unit "${activeUnit.id}" has been unheld.`);
+                                                        setShowStationConfig(false);
+                                                        handleReset();
+                                                    } else {
+                                                        alert(`Unhold error: ${res.message}`);
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            Unhold Unit & Resume
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
+                                            Temporarily suspend processing and retain this unit at {selectedStation.name}.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            style={{ width: '100%', height: 38, fontSize: '0.85rem', fontWeight: 700, color: '#d97706', borderColor: '#f59e0b' }}
+                                            onClick={async () => {
+                                                const reason = window.prompt('Enter hold reason (e.g. Component Verification, Quality Pause):', 'Quality Pause');
+                                                if (!reason) return;
+                                                const remarks = window.prompt('Additional hold remarks (optional):', '') || '';
+                                                const targetId = (scannedId || activeUnit?.id || '').trim().toUpperCase();
+                                                if (!targetId) { alert('No unit scanned to hold.'); return; }
+                                                
+                                                await processUnit(targetId, {
+                                                    station: selectedStation,
+                                                    project,
+                                                    result: 'Hold',
+                                                    details: { textValues: { holdReason: reason, holdRemarks: remarks } }
+                                                });
+                                                alert(`Unit "${targetId}" placed on HOLD at ${selectedStation.name}.`);
+                                                setShowStationConfig(false);
+                                                handleReset();
+                                            }}
+                                        >
+                                            Place Unit on HOLD
+                                        </button>
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            <div className="animate-fade-in">
-                                <StationForm
-                                    key={`${selectedStation.id}-${scannedId}`}
-                                    project={project}
-                                    station={selectedStation}
-                                    unitId={scannedId || 'BATCH'}
-                                    unitData={activeUnit}
-                                    onComplete={handleComplete}
-                                    onBulkComplete={() => { setLastProcessed("BATCH"); setShowSuccess(true); }}
-                                    onReset={handleReset}
-                                    getDisplayName={getDisplayName}
-                                />
+
+                            {/* Section B: Configured Workflow & Destination Info */}
+                            <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: '0.4rem' }}>
+                                    Permitted Flow Destinations
+                                </span>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
+                                    Stations available upon Pass completion for this terminal:
+                                </p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                    {getValidDestinationStations(selectedStation.id, project, 'Pass', null, activeUnit).availableStations.map(s => (
+                                        <span key={s.id} style={{
+                                            fontSize: '0.73rem',
+                                            padding: '3px 8px',
+                                            borderRadius: 4,
+                                            background: s.isDefault ? 'rgba(14, 165, 233, 0.12)' : 'var(--bg-main)',
+                                            color: s.isDefault ? 'var(--primary)' : 'var(--text-primary)',
+                                            fontWeight: s.isDefault ? 700 : 500,
+                                            border: `1px solid ${s.isDefault ? 'var(--primary)' : 'var(--border-color)'}`
+                                        }}>
+                                            {s.name} {s.isDefault && '★'}
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
-                        )}
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowStationConfig(false)}
+                                    style={{ height: 38, padding: '0 1.25rem' }}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
-        </div>
+                </div>
+            )}
+        </TerminalLayout>
     );
 };
 
 // ─── Station Form ───
 const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkComplete, onReset, getDisplayName }) => {
-    const { getProjectCategory, store, consumeBaanParts, bulkProcessUnits, uploadProofImage, validateScan } = useCQA();
+    const { getProjectCategory, store, consumeBaanParts, bulkProcessUnits, uploadProofImage, validateScan, syncBaanData } = useCQA();
     const projectCategory = getProjectCategory(project);
+
+    useEffect(() => {
+        const unsub = syncBaanData?.();
+        return () => unsub?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const [formData, setFormData] = useState({ result: null, decision: null, details: {} });
     const [reworkType, setReworkType] = useState(null); // 'NORMAL' or 'REPLACEMENT'
     const [baanRequestId, setBaanRequestId] = useState('');
@@ -854,6 +1268,20 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
         }
         return PERIPHERAL_QC_CHECKLIST;
     }, [projectCategory, station.id, unitData]);
+
+    // Keyboard & Focus Navigation for Checklists
+    const { activeIndex, setActiveIndex } = useCheckpointNavigation({
+        items: activeList,
+        unitId,
+        enabled: Boolean(activeList && activeList.length > 0),
+        onStatusSelect: (index, item, status) => {
+            const label = typeof item === 'string' ? item : item?.label;
+            if (!label) return false;
+            const isPass = status === 'Pass' || status === true;
+            handleCheck(label, isPass);
+            return true;
+        }
+    });
 
     const handleImageAttach = async (base64) => {
         if (!capturingFor) return;
@@ -1156,6 +1584,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                             const raw = e.target.ids.value.split('\n').map(x => x.trim().toUpperCase().replace(/\//g, '-')).filter(x => x);
                             if (!raw.length) { alert('Enter at least one Serial Number.'); return; }
                             if (projectCategory === 'Device' && !formData.details.productType) { alert('Select Device Type.'); return; }
+                            if (projectCategory === 'Calculator' && !formData.details.productType) { alert('Select Device Type.'); return; }
                             if (projectCategory === 'Peripherals' && (!formData.details.category || !formData.details.productType)) { alert('Select Category and Device Type.'); return; }
                             if (projectCategory === 'Inward QC' && !formData.details.productType) { alert('Select Device Type.'); return; }
                             raw.forEach(id => onComplete({ details: formData.details }, id));
@@ -1182,12 +1611,13 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                                     <select required value={formData.details.productType || ''} onChange={e => setFormData({ ...formData, details: { ...formData.details, productType: e.target.value } })}>
                                         <option value="">Select Type...</option>
                                         {projectCategory === 'Device' && ['Reverse', 'RTO', 'Manufacturing Defects', 'Others'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                        {projectCategory === 'Calculator' && ['Reverse', 'RTO', 'Manufacturing Defects', 'Customer Return', 'Others'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                         {projectCategory === 'Peripherals' && ['Fresh Lot', 'Reverse', 'RTO', 'Others'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                         {projectCategory === 'Inward QC' && ['Fresh Lot', 'Reworked RTO', 'Others'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                     </select>
                                 </div>
 
-                                {(projectCategory === 'Device' || projectCategory === 'Inward QC') && (
+                                {(projectCategory === 'Device' || projectCategory === 'Inward QC' || projectCategory === 'Calculator') && (
                                     <>
                                         <div className="input-field">
                                             <label>Hardware Version</label>
@@ -1379,127 +1809,61 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
     const isChecklist = (projectCategory === 'Device' && [2, 5, 6].includes(station.id)) || (projectCategory === 'Peripherals' && station.id === 2) || (projectCategory === 'Inward QC' && station.id === 2);
     if (isChecklist) {
         const list = activeList;
+        const answeredCount = Object.keys(checklist).length;
+        const anyFail = Object.values(checklist).includes(false);
+        const overallResult = anyFail ? 'Fail' : (answeredCount === list.length ? 'Pass' : 'Incomplete');
+
         return (
-            <form className="card animate-fade-in" onSubmit={handleStationSubmit}>
-                <div className="card-header">
+            <form className="card animate-fade-in" onSubmit={handleStationSubmit} style={{ paddingBottom: '5.5rem' }}>
+                <div className="card-header flex-between" style={{ padding: '1.25rem 1.75rem', borderBottom: '1px solid var(--border-light)' }}>
                     <div>
-                        <span className="text-xs uppercase font-bold text-muted">Quality Checklist</span>
-                        <h2 className="font-extrabold" style={{ fontSize: '1.25rem' }}>Interactive Inspection</h2>
+                        <span className="text-xs uppercase font-bold text-muted">Quality Checklist · {list.length} Checkpoints</span>
+                        <h2 className="font-extrabold" style={{ fontSize: '1.35rem', marginTop: 2 }}>Interactive Inspection</h2>
                     </div>
-                    <div className="text-mono flex-center" style={{
-                        background: 'var(--bg-input)',
-                        padding: '0.5rem 1rem',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '1rem',
-                        fontWeight: 800,
-                        border: '1px solid var(--border)'
-                    }}>{unitId}</div>
+                    <div className="terminal-unit-pill">{unitId}</div>
                 </div>
-                <div className="card-body">
-                    <div className="grid md-grid-2 gap-3" style={{ marginBottom: '1.5rem' }}>
+                <div className="card-body" style={{ padding: '1.5rem 1.75rem' }}>
+                    <CheckpointGrid>
                         {list.map((item, idx) => {
                             const label = typeof item === 'string' ? item : item.label;
                             return (
-                                <div key={idx} style={{
-                                    padding: '1rem',
-                                    background: 'var(--bg-input)',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: '1px solid var(--border-light)',
-                                }}>
-                                    <div className="font-semibold text-sm" style={{ marginBottom: '0.75rem', minHeight: '2.5rem' }}>
-                                        {idx + 1}. {label}
-                                    </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '0.5rem' }}>
-                                        <button type="button" className={`btn ${checklist[label] === true ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleCheck(label, true)} style={{ minHeight: 40, fontSize: '0.8rem' }}>Pass</button>
-                                        <button type="button" className={`btn ${checklist[label] === false ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleCheck(label, false)} style={{ minHeight: 40, fontSize: '0.8rem' }}>Fail</button>
-                                        <button type="button" className="btn btn-secondary" onClick={() => setCapturingFor(label)} style={{ minHeight: 40, fontSize: '0.8rem', gap: '4px' }}>
-                                            <Camera size={14} /> Capture
-                                        </button>
-                                    </div>
-
-                                    {/* Thumbnail Preview Area with Lazy Loading & Upload Status */}
-                                    {((checkpointImages[label] && checkpointImages[label].length > 0) || (uploadingStatus[label] > 0)) && (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem', padding: '0.5rem', background: '#fff', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                                            {(checkpointImages[label] || []).map((img, i) => {
-                                                const imageUrl = typeof img === 'string' ? img : img.url;
-                                                const isPending = typeof img === 'object' && img.pending;
-                                                
-                                                return (
-                                                    <div key={i} style={{ 
-                                                        position: 'relative', 
-                                                        width: 56, 
-                                                        height: 56, 
-                                                        borderRadius: '6px', 
-                                                        overflow: 'hidden', 
-                                                        border: '2px solid var(--border-light)',
-                                                        cursor: isPending ? 'not-allowed' : 'pointer'
-                                                    }} onClick={() => !isPending && window.open(imageUrl, '_blank')}>
-                                                        <img 
-                                                            src={imageUrl} 
-                                                            alt="proof" 
-                                                            loading="lazy"
-                                                            style={{ 
-                                                                width: '100%', 
-                                                                height: '100%', 
-                                                                objectFit: 'cover',
-                                                                opacity: isPending ? 0.4 : 1,
-                                                                filter: isPending ? 'grayscale(1)' : 'none'
-                                                            }} 
-                                                        />
-                                                        {isPending && (
-                                                            <div className="flex-center" style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.4)' }}>
-                                                                <Loader2 size={16} className="animate-spin text-primary" />
-                                                            </div>
-                                                        )}
-                                                        {!isPending && (
-                                                            <button 
-                                                                type="button" 
-                                                                style={{ position: 'absolute', top: 0, right: 0, background: 'rgba(220,38,38,0.9)', color: '#fff', border: 'none', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '0 0 0 4px' }} 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const newImgs = [...checkpointImages[label]];
-                                                                    newImgs.splice(i, 1);
-                                                                    setCheckpointImages({...checkpointImages, [label]: newImgs});
-                                                                }}
-                                                            >
-                                                                <X size={10} strokeWidth={3} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                            {/* Parallel Upload Slot Indication */}
-                                            {uploadingStatus[label] > 0 && (
-                                                <div style={{ width: 56, height: 56, border: '2px dashed var(--primary-alpha)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
-                                                    <Loader2 size={18} className="animate-spin text-primary" opacity={0.5} />
-                                                </div>
-                                            )}
-                                            {(checkpointImages[label] || []).length < 5 && (
-                                                <button type="button" onClick={() => setCapturingFor(label)} style={{ width: 56, height: 56, border: '2px dashed var(--border)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'var(--primary)', transition: 'all 0.2s' }} className="hover-lift">
-                                                    <Plus size={18} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                                <CheckpointCard
+                                    key={idx}
+                                    index={idx + 1}
+                                    label={label}
+                                    type="PF"
+                                    value={checklist[label]}
+                                    isActive={activeIndex === idx}
+                                    onClick={() => setActiveIndex(idx)}
+                                    onSelectStatus={(passStatus) => handleCheck(label, passStatus)}
+                                    onCaptureClick={() => setCapturingFor(label)}
+                                    images={checkpointImages[label] || []}
+                                    isUploading={uploadingStatus[label] > 0}
+                                    onDeleteImage={(i) => {
+                                        const newImgs = [...(checkpointImages[label] || [])];
+                                        newImgs.splice(i, 1);
+                                        setCheckpointImages({ ...checkpointImages, [label]: newImgs });
+                                    }}
+                                />
                             );
                         })}
-                    </div>
+                    </CheckpointGrid>
 
                     {formData.result === 'Fail' && (
                         <div className="animate-fade-in" style={{
                             padding: '1.5rem',
-                            border: '1px solid rgba(220,38,38,0.2)',
+                            border: '1px solid rgba(220,38,38,0.25)',
                             background: 'var(--error-bg)',
                             borderRadius: 'var(--radius-md)',
+                            marginTop: '1.5rem',
                             marginBottom: '1rem'
                         }}>
                             <div className="input-field" style={{ marginBottom: '1rem' }}>
-                                <label>Failure Remarks</label>
+                                <label>Failure Remarks <span style={{ color: 'var(--error)' }}>*</span></label>
                                 <textarea required rows={3} placeholder="Describe the issue..." onChange={e => setFormData({ ...formData, details: { ...formData.details, remarks: e.target.value } })} />
                             </div>
                             <div className="input-field">
-                                <label>Disposition</label>
+                                <label>Disposition <span style={{ color: 'var(--error)' }}>*</span></label>
                                 <div className="grid grid-2 gap-2">
                                     <button type="button" className={`btn ${formData.decision === 'debug' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFormData({ ...formData, decision: 'debug' })}>Debug</button>
                                     {station.id === 2 && <button type="button" className={`btn ${formData.decision === 'scrap_review' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => setFormData({ ...formData, decision: 'scrap_review' })}>Scrap Review</button>}
@@ -1507,8 +1871,18 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                             </div>
                         </div>
                     )}
-                    {renderActionButtons()}
+
+                    <ProgressActionBar
+                        answeredCount={answeredCount}
+                        totalCount={list.length}
+                        overallResult={overallResult}
+                        onReset={onReset}
+                        submitText="Complete Inspection"
+                        isSubmitting={isValidating}
+                        submitDisabled={answeredCount !== list.length || (overallResult === 'Fail' && (!formData.details?.remarks || !formData.decision))}
+                    />
                 </div>
+
 
                 {capturingFor && (
                     <ImageCapture 

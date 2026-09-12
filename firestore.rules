@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Protect Calculator devices from client-side write bypass.
+    // All Calculator device mutations MUST be performed via trusted Cloud Functions.
+    match /devices/{deviceId} {
+      allow read: if true;
+      allow create: if request.resource.data.project != 'Calculator';
+      allow update: if resource.data.project != 'Calculator' && request.resource.data.project != 'Calculator';
+      allow delete: if resource.data.project != 'Calculator';
+    }
+
+    // Existing open access for non-calculator collections & documents to preserve compatibility
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

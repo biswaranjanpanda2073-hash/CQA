@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search,
     History,
@@ -28,21 +28,71 @@ import {
     Image as ImageIcon,
     FastForward,
     Layers,
-    RotateCcw
+    RotateCcw,
+    Smartphone,
+    Printer,
+    Wrench,
+    Factory,
+    Zap
 } from 'lucide-react';
 
 import { useCQA } from '../hooks/useCQA';
 import QRScanner from './QRScanner';
 
-
 // ─── Stage Progression Tracker ───
 const DEVICE_FLOW = ['Receiving', 'Inspection', 'Debug', 'Rework', 'Final QC', 'Packing', 'FG'];
 const PERIPHERAL_FLOW = ['Receiving', 'QC', 'FG'];
 const INWARD_FLOW = ['Receiving', 'IQC', 'FG'];
+const CALCULATOR_FLOW = ['Receiving', 'Initial QC', 'Looper Analysis', 'Hardware QC', 'Hardware Rework', 'Assembly', 'Firmware QC', 'Packing', 'FG'];
+
+const PROJECT_METADATA = [
+    {
+        id: 'Device',
+        name: 'Device',
+        tag: '7 Flow Stations',
+        color: '#2563eb',
+        bgAlpha: 'rgba(37, 99, 235, 0.08)',
+        borderAlpha: 'rgba(37, 99, 235, 0.25)',
+        icon: Smartphone,
+        description: 'Smart POS & payment devices, multi-stage inspection, debug diagnostics, and rework history.'
+    },
+    {
+        id: 'Peripherals',
+        name: 'Peripherals',
+        tag: '4 QC Stations',
+        color: '#0891b2',
+        bgAlpha: 'rgba(8, 145, 178, 0.08)',
+        borderAlpha: 'rgba(8, 145, 178, 0.25)',
+        icon: Printer,
+        description: 'Thermal printers, chargers, scanning accessories, quality control verification, and rejection logs.'
+    },
+    {
+        id: 'Inward QC',
+        name: 'Inward QC',
+        tag: '4 IQC Stations',
+        color: '#7c3aed',
+        bgAlpha: 'rgba(124, 58, 237, 0.08)',
+        borderAlpha: 'rgba(124, 58, 237, 0.25)',
+        icon: ShieldCheck,
+        description: 'Incoming shipment inspection, component-level testing, lot verification, and raw material IQC.'
+    },
+    {
+        id: 'Calculator',
+        name: 'Calculator',
+        tag: '10 Refurb Stations',
+        color: '#16a34a',
+        bgAlpha: 'rgba(22, 163, 74, 0.08)',
+        borderAlpha: 'rgba(22, 163, 74, 0.25)',
+        icon: Wrench,
+        description: 'Reverse device refurbishment, PCBA debugging, rework logging, firmware QC, and scrap analysis.'
+    }
+];
 
 const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLabels = false }) => {
-    const flow = project === 'Peripherals' ? PERIPHERAL_FLOW :
-        project === 'Inward QC' ? INWARD_FLOW : DEVICE_FLOW;
+    const projCategory = (project || '').trim();
+    const flow = projCategory === 'Peripherals' ? PERIPHERAL_FLOW :
+        projCategory === 'Inward QC' ? INWARD_FLOW :
+        projCategory === 'Calculator' ? CALCULATOR_FLOW : DEVICE_FLOW;
 
     const completedStages = new Set();
     const skippedStages = new Set();
@@ -140,13 +190,63 @@ const DetailItem = ({ label, value, icon: Icon }) => (
 
 // ─── InfoCentre Component ───
 const InfoCentre = ({ user, onNavigateToConfig }) => {
-    const { getUnit, store, getDisplayName, resolveActiveProject } = useCQA();
+    const { getUnit, store, getDisplayName, resolveActiveProject, getProjectCategory } = useCQA();
+
+    const [selectedProject, setSelectedProject] = useState(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('project') || '';
+        } catch { return ''; }
+    });
 
     const [searchTerm, setSearchTerm] = useState('');
     const [unit, setUnit] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
+    const [searchError, setSearchError] = useState(null);
+    const [showScanner, setShowScanner] = useState(false);
+    const [recentSearches, setRecentSearches] = useState([]);
+
+    useEffect(() => {
+        if (!selectedProject) {
+            setRecentSearches([]);
+            return;
+        }
+        const projCategory = getProjectCategory(selectedProject);
+        try {
+            const saved = localStorage.getItem(`cqa_recent_searches_${projCategory}`);
+            setRecentSearches(saved ? JSON.parse(saved) : []);
+        } catch {
+            setRecentSearches([]);
+        }
+    }, [selectedProject, getProjectCategory]);
+
+    const handleSelectProject = (projId) => {
+        setSelectedProject(projId);
+        setUnit(null);
+        setSearchError(null);
+        setSearchTerm('');
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('section', 'info');
+            url.searchParams.set('project', projId);
+            window.history.replaceState(null, '', url.toString());
+        } catch {}
+    };
+
+    const handleSwitchProject = () => {
+        setSelectedProject('');
+        setUnit(null);
+        setSearchError(null);
+        setSearchTerm('');
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('section', 'info');
+            url.searchParams.delete('project');
+            window.history.replaceState(null, '', url.toString());
+        } catch {}
+    };
 
     const formatDate = (dateStr) => {
         if (!dateStr) return '—';
@@ -166,13 +266,6 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
             return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
         } catch { return dateStr; }
     };
-    const [showScanner, setShowScanner] = useState(false);
-    const [recentSearches, setRecentSearches] = useState(() => {
-
-        try {
-            return JSON.parse(localStorage.getItem('cqa_recent_searches') || '[]');
-        } catch { return []; }
-    });
 
     const handleSearch = async (e) => {
         if (e) e.preventDefault();
@@ -180,17 +273,51 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
         if (!cleanId) return;
 
         setLoading(true);
+        setSearchError(null);
+        setUnit(null);
         try {
             const found = await getUnit(cleanId);
-            setUnit(found);
-            if (found) {
-                setActiveTab('overview');
-                const updated = [cleanId, ...recentSearches.filter(s => s !== cleanId)].slice(0, 8);
-                setRecentSearches(updated);
-                localStorage.setItem('cqa_recent_searches', JSON.stringify(updated));
+            if (!found) {
+                setSearchError({
+                    type: 'NOT_FOUND',
+                    title: 'Serial Number Not Found',
+                    message: `Serial Number "${cleanId}" was not found in CQA MES database.`
+                });
+                return;
             }
+
+            // Project verification
+            const activeProj = resolveActiveProject(found);
+            const unitProjectCategory = getProjectCategory(activeProj);
+            const selectedCategory = getProjectCategory(selectedProject);
+
+            if (unitProjectCategory !== selectedCategory) {
+                setSearchError({
+                    type: 'PROJECT_MISMATCH',
+                    title: `No Results in ${getDisplayName('projects', selectedProject)}`,
+                    message: `Serial Number "${cleanId}" does not belong to ${getDisplayName('projects', selectedProject)}.`,
+                    hint: `This unit is currently processed under "${getDisplayName('projects', activeProj)}".`,
+                    actualProject: activeProj,
+                    searchedId: cleanId
+                });
+                return;
+            }
+
+            setUnit(found);
+            setActiveTab('overview');
+            const recentKey = `cqa_recent_searches_${selectedCategory}`;
+            const updated = [cleanId, ...recentSearches.filter(s => s !== cleanId)].slice(0, 8);
+            setRecentSearches(updated);
+            try {
+                localStorage.setItem(recentKey, JSON.stringify(updated));
+            } catch {}
         } catch (err) {
             console.error("Search error:", err);
+            setSearchError({
+                type: 'ERROR',
+                title: 'Search Error',
+                message: err.message || 'An error occurred while fetching unit records.'
+            });
         } finally {
             setLoading(false);
         }
@@ -200,10 +327,43 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
         const cleanTerm = term.trim().toUpperCase().replace(/\//g, '-');
         setSearchTerm(cleanTerm);
         setLoading(true);
+        setSearchError(null);
+        setUnit(null);
         try {
             const found = await getUnit(cleanTerm);
+            if (!found) {
+                setSearchError({
+                    type: 'NOT_FOUND',
+                    title: 'Serial Number Not Found',
+                    message: `Serial Number "${cleanTerm}" was not found in CQA MES database.`
+                });
+                return;
+            }
+
+            const activeProj = resolveActiveProject(found);
+            const unitProjectCategory = getProjectCategory(activeProj);
+            const selectedCategory = getProjectCategory(selectedProject);
+
+            if (unitProjectCategory !== selectedCategory) {
+                setSearchError({
+                    type: 'PROJECT_MISMATCH',
+                    title: `No Results in ${getDisplayName('projects', selectedProject)}`,
+                    message: `Serial Number "${cleanTerm}" does not belong to ${getDisplayName('projects', selectedProject)}.`,
+                    hint: `This unit is currently processed under "${getDisplayName('projects', activeProj)}".`,
+                    actualProject: activeProj,
+                    searchedId: cleanTerm
+                });
+                return;
+            }
+
             setUnit(found);
-            if (found) setActiveTab('overview');
+            setActiveTab('overview');
+        } catch (err) {
+            setSearchError({
+                type: 'ERROR',
+                title: 'Search Error',
+                message: err.message || 'An error occurred.'
+            });
         } finally {
             setLoading(false);
         }
@@ -218,11 +378,174 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
             .slice(0, 5);
     }, [searchTerm, recentSearches, unit]);
 
+    // ═══════════════════════════════════════════════════════════════
+    // 1. PROJECT SELECTION LANDING SCREEN (If no project selected)
+    // ═══════════════════════════════════════════════════════════════
+    if (!selectedProject) {
+        return (
+            <div className="animate-fade-in" style={{ maxWidth: 980, margin: '0 auto', padding: '1.5rem 1rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+                    <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.4rem 1.1rem',
+                        borderRadius: '999px',
+                        background: 'var(--primary-alpha, rgba(37, 99, 235, 0.1))',
+                        color: 'var(--primary)',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        marginBottom: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                    }}>
+                        <Database size={14} /> Project-Scoped Info Centre
+                    </div>
+                    <h1 className="page-title" style={{ fontSize: '2.1rem', marginBottom: '0.5rem' }}>
+                        Select Project to Continue
+                    </h1>
+                    <p className="page-subtitle" style={{ maxWidth: 540, margin: '0 auto', fontSize: '0.95rem' }}>
+                        Unit traceability, production audits, and station history are strictly partitioned by project. Select a project to begin searching.
+                    </p>
+                </div>
+
+                <div className="grid md-grid-2 gap-4">
+                    {PROJECT_METADATA.map((p) => {
+                        const IconComponent = p.icon;
+                        const displayName = getDisplayName('projects', p.id);
+                        return (
+                            <div
+                                key={p.id}
+                                className="card clickable hover-lift"
+                                onClick={() => handleSelectProject(p.id)}
+                                style={{
+                                    padding: '1.75rem',
+                                    borderRadius: '1.1rem',
+                                    border: `1.5px solid ${p.borderAlpha}`,
+                                    background: 'var(--bg-card)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.22s ease-in-out',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    boxShadow: 'var(--shadow-sm)'
+                                }}
+                            >
+                                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: p.color }} />
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+                                        <div style={{
+                                            width: 52,
+                                            height: 52,
+                                            borderRadius: '0.85rem',
+                                            background: p.bgAlpha,
+                                            color: p.color,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}>
+                                            <IconComponent size={26} />
+                                        </div>
+                                        <span style={{
+                                            fontSize: '0.72rem',
+                                            fontWeight: 700,
+                                            padding: '0.3rem 0.75rem',
+                                            borderRadius: '999px',
+                                            background: p.bgAlpha,
+                                            color: p.color,
+                                            letterSpacing: '0.02em'
+                                        }}>
+                                            {p.tag}
+                                        </span>
+                                    </div>
+                                    <h3 className="font-extrabold" style={{ fontSize: '1.35rem', marginBottom: '0.5rem', color: 'var(--text-main)' }}>
+                                        {displayName}
+                                    </h3>
+                                    <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+                                        {p.description}
+                                    </p>
+                                </div>
+
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    paddingTop: '1rem',
+                                    borderTop: '1px solid var(--border-light)'
+                                }}>
+                                    <span style={{ fontSize: '0.84rem', fontWeight: 700, color: p.color }}>
+                                        Open {displayName} Info Centre
+                                    </span>
+                                    <div style={{
+                                        width: 34, height: 34, borderRadius: '50%',
+                                        background: p.bgAlpha, color: p.color,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}>
+                                        <ArrowRight size={17} />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 2. PROJECT-SCOPED INFO CENTRE VIEW
+    // ═══════════════════════════════════════════════════════════════
+    const selectedProjectMetadata = PROJECT_METADATA.find(p => p.id === selectedProject) || PROJECT_METADATA[0];
+    const ProjectIcon = selectedProjectMetadata.icon;
+    const projectDisplayName = getDisplayName('projects', selectedProject);
+
     return (
         <div className="animate-fade-in">
-            <div className="page-header">
-                <h1 className="page-title">Info Centre</h1>
-                <p className="page-subtitle">Unit traceability, production audit, and historical tracking</p>
+            {/* Header with Project Badge and Switch Project Button */}
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1.5rem',
+                flexWrap: 'wrap',
+                gap: '1rem',
+                paddingBottom: '1rem',
+                borderBottom: '1px solid var(--border-light)'
+            }}>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                        <h1 className="page-title" style={{ margin: 0 }}>Info Centre</h1>
+                        <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            padding: '0.3rem 0.85rem',
+                            borderRadius: '999px',
+                            background: selectedProjectMetadata.bgAlpha,
+                            color: selectedProjectMetadata.color,
+                            border: `1px solid ${selectedProjectMetadata.borderAlpha}`
+                        }}>
+                            <ProjectIcon size={14} />
+                            {projectDisplayName}
+                        </span>
+                    </div>
+                    <p className="page-subtitle" style={{ margin: 0 }}>
+                        Dedicated unit traceability, production audit, and stage progression for {projectDisplayName}
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleSwitchProject}
+                    style={{ fontSize: '0.8125rem', height: 40, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                    <RotateCcw size={15} /> Switch Project
+                </button>
             </div>
 
             {/* ─── Search Section ─── */}
@@ -234,11 +557,11 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
                                 position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)',
                                 pointerEvents: 'none', zIndex: 1,
                             }}>
-                                <Scan size={18} color="var(--primary)" />
+                                <Scan size={18} color={selectedProjectMetadata.color} />
                             </div>
                             <input
                                 type="text"
-                                placeholder="Enter serial number..."
+                                placeholder={`Enter ${projectDisplayName} serial number...`}
                                 autoFocus
                                 className="font-bold text-mono"
                                 style={{
@@ -252,7 +575,10 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
                                 onChange={e => {
                                     const val = e.target.value.toUpperCase().replace(/\//g, '-');
                                     setSearchTerm(val);
-                                    if (val === '') setUnit(null);
+                                    if (val === '') {
+                                        setUnit(null);
+                                        setSearchError(null);
+                                    }
                                 }}
                             />
                             {/* Auto-suggestion dropdown */}
@@ -305,11 +631,10 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
                         />
                     )}
 
-
-                    {/* Recent Searches */}
+                    {/* Recent Searches (Filtered to selected project) */}
                     {recentSearches.length > 0 && !unit && (
                         <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span className="text-xs font-semibold text-muted">Recent:</span>
+                            <span className="text-xs font-semibold text-muted">Recent ({projectDisplayName}):</span>
                             {recentSearches.map(s => (
                                 <button
                                     key={s}
@@ -324,6 +649,7 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
                     )}
                 </div>
             </div>
+
 
             {/* ─── Tab Navigation ─── */}
             {unit && (
@@ -737,17 +1063,99 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
                     )}
                     </div>
                 </div>
+            ) : searchError ? (
+                <div className="card animate-fade-in" style={{
+                    padding: '2.5rem 1.5rem',
+                    textAlign: 'center',
+                    maxWidth: 580,
+                    margin: '1.5rem auto',
+                    borderRadius: '1.25rem',
+                    border: searchError.type === 'PROJECT_MISMATCH' 
+                        ? '1.5px solid rgba(245, 158, 11, 0.35)' 
+                        : '1.5px solid var(--border)',
+                    background: searchError.type === 'PROJECT_MISMATCH'
+                        ? 'rgba(245, 158, 11, 0.04)'
+                        : 'var(--bg-card)',
+                    boxShadow: 'var(--shadow-sm)'
+                }}>
+                    <div style={{
+                        width: 58,
+                        height: 58,
+                        borderRadius: '50%',
+                        background: searchError.type === 'PROJECT_MISMATCH'
+                            ? 'rgba(245, 158, 11, 0.15)'
+                            : 'var(--error-bg, rgba(239, 68, 68, 0.1))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        margin: '0 auto 1.25rem'
+                    }}>
+                        {searchError.type === 'PROJECT_MISMATCH' ? (
+                            <AlertTriangle size={28} color="#d97706" />
+                        ) : (
+                            <XCircle size={28} color="var(--error, #ef4444)" />
+                        )}
+                    </div>
+                    <h3 className="font-extrabold" style={{
+                        fontSize: '1.3rem',
+                        marginBottom: '0.5rem',
+                        color: searchError.type === 'PROJECT_MISMATCH' ? '#d97706' : 'var(--text-main)'
+                    }}>
+                        {searchError.title}
+                    </h3>
+                    <p style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.9rem',
+                        lineHeight: 1.6,
+                        maxWidth: 480,
+                        margin: '0 auto 1.5rem'
+                    }}>
+                        {searchError.message}
+                        {searchError.hint && (
+                            <span style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                                {searchError.hint}
+                            </span>
+                        )}
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        {searchError.type === 'PROJECT_MISMATCH' && searchError.actualProject && (
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ fontSize: '0.875rem', height: 42, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                                onClick={() => {
+                                    const targetP = searchError.actualProject;
+                                    handleSelectProject(targetP);
+                                    quickSearch(searchError.searchedId);
+                                }}
+                            >
+                                <ArrowRight size={16} /> Switch to {getDisplayName('projects', searchError.actualProject)} & View Records
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.875rem', height: 42 }}
+                            onClick={() => {
+                                setSearchError(null);
+                                setSearchTerm('');
+                            }}
+                        >
+                            Clear Search
+                        </button>
+                    </div>
+                </div>
             ) : (
                 <div className="empty-state" style={{
                     background: 'var(--bg-card)',
                     borderRadius: 'var(--radius-xl)',
                     border: '2px dashed var(--border)',
                 }}>
-                    <div className="empty-state-icon">
-                        <ShieldCheck size={32} color="var(--primary)" />
+                    <div className="empty-state-icon" style={{ background: selectedProjectMetadata?.bgAlpha, color: selectedProjectMetadata?.color }}>
+                        <ProjectIcon size={32} />
                     </div>
-                    <h3>Traceability Engine Ready</h3>
-                    <p>Enter a serial number to unlock production audit data, stage progression, and movement history.</p>
+                    <h3>{projectDisplayName} Traceability Ready</h3>
+                    <p>Enter a {projectDisplayName} serial number to unlock production audit data, stage progression, and movement history.</p>
                 </div>
             )}
             {/* Image Preview Modal */}

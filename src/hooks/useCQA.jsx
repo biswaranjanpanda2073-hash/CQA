@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { 
-    db, storage, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
-    ref, uploadBytes, getDownloadURL, uploadString 
+    db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
+    ref, uploadBytes, getDownloadURL, uploadString,
+    signInWithCustomToken, httpsCallable
 } from '../firebase';
 import {
     normalizeSerialNumbers,
@@ -11,6 +12,16 @@ import {
     calculateRiskLevel,
     validateUnitRecord
 } from '../utils/movementEngine';
+import {
+    CALCULATOR_STATIONS,
+    isRepeatSerial,
+    resolveCalcNextStation,
+    validateCalcRouting,
+    generateCalcMovementId,
+    generateScrapInboundId,
+    CALC_SCRAP_ELIGIBLE_FROM,
+    getCalcStationById
+} from '../utils/calculatorEngine';
 
 const INITIAL_STORE = {
     devices: {},
@@ -35,7 +46,7 @@ export const CQAProvider = ({ children }) => {
     const [store, setStore] = useState(INITIAL_STORE);
     const [loading, setLoading] = useState(true);
     const [systemNames, setSystemNames] = useState({
-        projects: { 'Device': 'Device', 'Peripherals': 'Peripherals', 'Inward QC': 'Inward QC' },
+        projects: { 'Device': 'Device', 'Peripherals': 'Peripherals', 'Inward QC': 'Inward QC', 'Calculator': 'Calculator Refurbishment' },
         stations: {}
     });
 
@@ -69,6 +80,7 @@ export const CQAProvider = ({ children }) => {
         if (project === 'Device' || systemNames.projects?.['Device'] === project) return 'Device';
         if (project === 'Peripherals' || systemNames.projects?.['Peripherals'] === project) return 'Peripherals';
         if (project === 'Inward QC' || systemNames.projects?.['Inward QC'] === project) return 'Inward QC';
+        if (project === 'Calculator' || systemNames.projects?.['Calculator'] === project) return 'Calculator';
         return project;
     }, [systemNames]);
 
@@ -95,6 +107,7 @@ export const CQAProvider = ({ children }) => {
         if (stName === 'QC' || stName === 'PERIPHERALS QC') return 'Peripherals';
         if (stName === 'REJECTION REVIEW') return 'Peripherals';
         if (stName === 'REJECTION') return 'Inward QC';
+        if (['INITIAL QC', 'LOOPER ANALYSIS', 'HARDWARE QC / DEBUG', 'HARDWARE QC', 'HARDWARE REWORK', 'ASSEMBLY', 'FIRMWARE QC', 'PACKING & CLEANING', 'SCRAP ANALYSIS'].some(s => stName === s)) return 'Calculator';
         
         // 2. RECENT HISTORY SEARCH (Newest First)
         if (!unit) return 'Other';
@@ -225,8 +238,12 @@ export const CQAProvider = ({ children }) => {
             return { success: false, message: `Category Mismatch: Unit belongs to ${unitCat}.` };
         }
         
-        if (unit.status === 'Scrap' || unit.status === 'Reject') {
+        if (unit.status === 'Scrap' || unit.status === 'Reject' || unit.status === 'SCRAPPED') {
              return { success: false, message: `Unit is ${unit.status.toUpperCase()} (Locked).` };
+        }
+
+        if (unit.holdStatus === 'HOLD') {
+            return { success: false, message: `Unit is ON HOLD at ${unit.holdStation || 'current station'}. Station unhold is required.` };
         }
 
         const unitStationName = (unit.stationName || '').toUpperCase();
@@ -266,6 +283,264 @@ export const CQAProvider = ({ children }) => {
         };
 
         const projectCategory = getProjectCategory(project);
+
+        // ─── CALCULATOR REFURBISHMENT: TRUSTED CLOUD FUNCTION PROCESSING (with local fallback) ───
+        if (projectCategory === 'Calculator') {
+            try {
+                if (!auth.currentUser) {
+                    const saved = localStorage.getItem('cqa_user');
+                    if (saved) {
+                        const u = JSON.parse(saved);
+                        if (u?.id && u?.password) {
+                            try {
+                                const loginFn = httpsCallable(functions, 'loginAndGetToken');
+                                const tokRes = await loginFn({ userId: u.id, password: u.password });
+                                if (tokRes.data?.token) {
+                                    await signInWithCustomToken(auth, tokRes.data.token);
+                                }
+                            } catch (e) {
+                                // Ignore background auth error in local mode
+                            }
+                        }
+                    }
+                }
+
+                const processCalcFn = httpsCallable(functions, 'processCalculatorStation');
+                const callRes = await processCalcFn({
+                    serialNumber: cleanId,
+                    stationId: station.id,
+                    result: result || decision,
+                    details: details || {},
+                    checkpointResults: details?.checkpointResults || {},
+                    dataValues: details?.dataValues || {},
+                    textValues: details?.textValues || {},
+                    selectedNextStationId: data?.targetStationId || details?.selectedNextStationId || null,
+                    routeToScrap: details?.routeToScrap || false
+                });
+
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices };
+                    delete nextDevices[cleanId];
+                    return { ...prev, devices: nextDevices };
+                });
+
+                return callRes.data?.success || true;
+            } catch (err) {
+                console.warn("Cloud Function not deployed or unreachable on localhost, falling back to local processor:", err.message);
+                try {
+                    // Local Processor Fallback
+                    const deviceRef = doc(db, 'devices', cleanId);
+                    const snap = await getDoc(deviceRef);
+                    const freshUnit = snap.exists() ? snap.data() : null;
+                    const timestamp = new Date().toISOString();
+                    const movementId = generateCalcMovementId('CALC');
+
+                    let unit = freshUnit ? { ...freshUnit } : {
+                        id: cleanId,
+                        project: 'Calculator',
+                        looper: 1,
+                        history: [],
+                        status: 'Processing',
+                        createdAt: timestamp
+                    };
+
+                    const stationId = station.id;
+                    const stationName = station.name;
+
+                    // Station 1: RECEIVING
+                    if (stationId === 1) {
+                        if (freshUnit) {
+                            if (freshUnit.status === 'Processing') {
+                                alert(`Unit "${cleanId}" is locked at ${freshUnit.stationName || 'current station'}.`);
+                                return false;
+                            }
+                            if (['Completed', 'SCRAPPED', 'Scrap', 'Reject'].includes(freshUnit.status)) {
+                                unit.looper = (unit.looper || 1) + 1;
+                            }
+                        }
+
+                        unit.project = 'Calculator';
+                        unit.status = 'Processing';
+                        unit.details = { ...(details || {}) };
+                        unit.updatedAt = timestamp;
+                        unit.holdStatus = null;
+                        unit.holdStation = null;
+                        unit.holdStationId = null;
+                        unit.holdReason = null;
+                        unit.holdRemarks = null;
+                        unit.holdTimestamp = null;
+                        unit.holdUserId = null;
+                        unit.scrapInboundMovementId = null;
+
+                        const routing = resolveCalcNextStation(1, 'Pass', unit, null);
+                        unit.currentStation = routing.nextStationId;
+                        unit.stationName = routing.nextStationName;
+
+                        const historyEntry = {
+                            station: 'RECEIVING',
+                            stationId: 1,
+                            timestamp,
+                            result: 'COMPLETED',
+                            operator: operator || 'SYSTEM_ADMIN',
+                            looper: unit.looper,
+                            project: 'Calculator',
+                            movementId,
+                            details: { ...(details || {}) }
+                        };
+
+                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+
+                        setStore(prev => {
+                            const nextDevices = { ...prev.devices };
+                            delete nextDevices[cleanId];
+                            return { ...prev, devices: nextDevices };
+                        });
+                        return true;
+                    }
+
+                    // NON-RECEIVING STATIONS
+                    if (!freshUnit) {
+                        alert(`Unit "${cleanId}" not found. Process RECEIVING first.`);
+                        return false;
+                    }
+
+                    if (unit.currentStation !== stationId) {
+                        alert(`Unit is currently at ${unit.stationName} (Station ${unit.currentStation}), not ${stationName} (Station ${stationId}).`);
+                        return false;
+                    }
+
+                    if (unit.holdStatus === 'HOLD') {
+                        alert(`Unit is ON HOLD at ${unit.holdStation}. Unhold before processing.`);
+                        return false;
+                    }
+
+                    if (['SCRAPPED', 'Scrap', 'Reject'].includes(unit.status)) {
+                        alert(`Unit is ${unit.status} (LOCKED).`);
+                        return false;
+                    }
+
+                    // Route to Scrap
+                    if (details?.routeToScrap === true) {
+                        const scrapInboundId = generateScrapInboundId();
+                        const historyEntry = {
+                            station: stationName,
+                            stationId,
+                            timestamp,
+                            result: 'ROUTED_TO_SCRAP',
+                            operator: operator || 'SYSTEM_ADMIN',
+                            looper: unit.looper,
+                            project: 'Calculator',
+                            movementId: scrapInboundId,
+                            fromStationId: stationId,
+                            fromStationName: stationName,
+                            details: {
+                                ...(details || {}),
+                                routedToScrap: true,
+                                scrapRouteReason: details?.textValues?.scrapRouteReason || ''
+                            }
+                        };
+
+                        unit.currentStation = 9;
+                        unit.stationName = 'SCRAP ANALYSIS';
+                        unit.scrapInboundMovementId = scrapInboundId;
+                        unit.updatedAt = timestamp;
+                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                        setStore(prev => {
+                            const nextDevices = { ...prev.devices };
+                            delete nextDevices[cleanId];
+                            return { ...prev, devices: nextDevices };
+                        });
+                        return true;
+                    }
+
+                    // Standard routing
+                    const finalResult = result || decision;
+                    const selectedNextStationId = data?.targetStationId || details?.selectedNextStationId || null;
+                    const routing = resolveCalcNextStation(stationId, finalResult, unit, selectedNextStationId);
+
+                    if (!routing.valid) {
+                        alert(routing.reason || "Invalid station routing.");
+                        return false;
+                    }
+
+                    const historyEntry = {
+                        station: stationName,
+                        stationId,
+                        timestamp,
+                        result: finalResult,
+                        operator: operator || 'SYSTEM_ADMIN',
+                        looper: unit.looper,
+                        project: 'Calculator',
+                        movementId,
+                        details: {
+                            ...(details || {}),
+                            ...(selectedNextStationId ? { selectedNextStationId, selectedNextStationName: getCalcStationById(selectedNextStationId)?.name } : {})
+                        }
+                    };
+
+                    // HOLD
+                    if (routing.isHold) {
+                        unit.holdStatus = 'HOLD';
+                        unit.holdStation = stationName;
+                        unit.holdStationId = stationId;
+                        unit.holdReason = details?.textValues?.holdReason || '';
+                        unit.holdRemarks = details?.textValues?.holdRemarks || details?.textValues?.remarks || '';
+                        unit.holdTimestamp = timestamp;
+                        unit.holdUserId = operator || 'SYSTEM_ADMIN';
+                        unit.updatedAt = timestamp;
+                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                        setStore(prev => {
+                            const nextDevices = { ...prev.devices };
+                            delete nextDevices[cleanId];
+                            return { ...prev, devices: nextDevices };
+                        });
+                        return true;
+                    }
+
+                    // MOVE TO FG (Completed)
+                    if (routing.nextStationId === 10) {
+                        unit.status = 'Completed';
+                        unit.currentStation = 10;
+                        unit.stationName = 'MOVE TO FG';
+                        unit.cycleEndDate = timestamp;
+                        unit.updatedAt = timestamp;
+                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                        setStore(prev => {
+                            const nextDevices = { ...prev.devices };
+                            delete nextDevices[cleanId];
+                            return { ...prev, devices: nextDevices };
+                        });
+                        return true;
+                    }
+
+                    // Normal Advance
+                    unit.currentStation = routing.nextStationId;
+                    unit.stationName = routing.nextStationName;
+                    unit.updatedAt = timestamp;
+                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                    setStore(prev => {
+                        const nextDevices = { ...prev.devices };
+                        delete nextDevices[cleanId];
+                        return { ...prev, devices: nextDevices };
+                    });
+                    return true;
+                } catch (localErr) {
+                    console.error("Local processor error:", localErr);
+                    alert(`Calculator Station Error: ${localErr.message}`);
+                    return false;
+                }
+            }
+        }
+
         let nextStation = null; 
         let nextStationName = '';
 
@@ -309,6 +584,29 @@ export const CQAProvider = ({ children }) => {
                 case 4: if (result === 'Pass') { updatedUnit.status = 'Reject'; nextStation = null; nextStationName = 'REJECTED'; updatedUnit.lockDate = timestamp; } else { nextStation = 3; nextStationName = 'MOVE TO FG'; } break;
             }
         }
+        }
+
+        // ── Apply validated Target Station Override if provided ──
+        if (data?.targetStationId) {
+            const workflow = PROJECT_WORKFLOWS[project] || PROJECT_WORKFLOWS['Device'];
+            const chosen = workflow.find(s => s.id === Number(data.targetStationId));
+            if (chosen && chosen.id !== station.id) {
+                nextStation = chosen.id;
+                nextStationName = chosen.name;
+                historyEntry.isDestinationOverridden = true;
+                historyEntry.targetStationId = chosen.id;
+                historyEntry.targetStationName = chosen.name;
+
+                if (chosen.type === 'TERMINAL_FG') {
+                    updatedUnit.status = 'Completed';
+                    nextStation = null;
+                    updatedUnit.cycleEndDate = timestamp;
+                } else if (chosen.type === 'TERMINAL_SCRAP') {
+                    updatedUnit.status = 'Scrap';
+                    nextStation = null;
+                    updatedUnit.lockDate = timestamp;
+                }
+            }
         }
 
         updatedUnit.currentStation = nextStation; 
@@ -370,10 +668,42 @@ export const CQAProvider = ({ children }) => {
         }
 
         if (snap.exists() && snap.data().password === pwd) {
-            return { success: true, user: { id: snap.id, ...snap.data() } };
+            const userData = { id: snap.id, ...snap.data() };
+            try {
+                const loginFn = httpsCallable(functions, 'loginAndGetToken');
+                const tokRes = await loginFn({ userId: snap.id, password: pwd });
+                if (tokRes.data?.token) {
+                    await signInWithCustomToken(auth, tokRes.data.token);
+                }
+            } catch (authErr) {
+                console.warn("Firebase Auth custom token sign-in error:", authErr);
+            }
+            return { success: true, user: userData };
         }
         return { success: false, message: 'Invalid credentials' };
     };
+
+    // Background Firebase Auth session restoration for custom tokens
+    useEffect(() => {
+        const restoreAuth = async () => {
+            try {
+                const saved = localStorage.getItem('cqa_user');
+                if (saved && !auth.currentUser) {
+                    const u = JSON.parse(saved);
+                    if (u?.id && u?.password) {
+                        const loginFn = httpsCallable(functions, 'loginAndGetToken');
+                        const tokRes = await loginFn({ userId: u.id, password: u.password });
+                        if (tokRes.data?.token) {
+                            await signInWithCustomToken(auth, tokRes.data.token);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("Auth restoration notice:", e);
+            }
+        };
+        restoreAuth();
+    }, []);
 
     // ─── Media Attachment Logic (Universal) ───
     const uploadProofImage = useCallback(async (base64Img, path) => {
@@ -424,6 +754,26 @@ export const CQAProvider = ({ children }) => {
             for (const { id, data } of chunk) {
                 const cleanId = id.trim().toUpperCase().replace(/\//g, '-');
                 const { station, project, details, operator } = data;
+                const projectCategory = getProjectCategory(project);
+
+                if (projectCategory === 'Calculator') {
+                    try {
+                        const processCalcFn = httpsCallable(functions, 'processCalculatorStation');
+                        await processCalcFn({
+                            serialNumber: cleanId,
+                            stationId: station?.id || 1,
+                            result: 'Pass',
+                            details: details || {}
+                        });
+                        results.success++;
+                    } catch (e) {
+                        console.error("Calc bulk unit error:", e);
+                        results.fail++;
+                        results.errors.push(e.message);
+                    }
+                    continue;
+                }
+
                 const existingUnit = existingUnits[cleanId];
                 
                 let updatedUnit = existingUnit ? { ...existingUnit } : {
@@ -446,8 +796,6 @@ export const CQAProvider = ({ children }) => {
                     project: project,
                     details: { ...details }
                 };
-
-                const projectCategory = getProjectCategory(project);
                 let nextStation = 2; // Receiving always goes to station 2
                 let nextStationName = projectCategory === 'Device' ? 'INSPECTION' : (projectCategory === 'Peripherals' ? 'QC' : 'IQC');
 
@@ -501,7 +849,7 @@ export const CQAProvider = ({ children }) => {
             return onSnapshot(collection(db, name), (snapshot) => {
                 const data = {};
                 snapshot.forEach(doc => {
-                    data[doc.id] = doc.data();
+                    data[doc.id] = { id: doc.id, ...doc.data() };
                 });
                 setStore(prev => ({
                     ...prev,
@@ -750,10 +1098,10 @@ export const CQAProvider = ({ children }) => {
                     nextStationId = null;
                     nextStationName = 'FG (DONE)';
                 } else if (targetStObj?.type === 'TERMINAL_SCRAP') {
-                    newStatus = (unitProject === 'Device') ? 'Scrap' : 'Reject';
+                    newStatus = (unitProject === 'Device') ? 'Scrap' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'Reject');
                     lockDate = timestamp;
                     nextStationId = null;
-                    nextStationName = (unitProject === 'Device') ? 'SCRAP (LOCKED)' : 'REJECTED';
+                    nextStationName = (unitProject === 'Device') ? 'SCRAP (LOCKED)' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'REJECTED');
                 }
 
                 let movementResult = 'ADMIN_REROUTE';
@@ -999,12 +1347,197 @@ export const CQAProvider = ({ children }) => {
         }
     }, []);
 
+    const unholdCalculatorSerial = useCallback(async (serialNumber) => {
+        try {
+            const unholdFn = httpsCallable(functions, 'unholdCalculatorSerial');
+            const res = await unholdFn({ serialNumber });
+            const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
+            setStore(prev => {
+                const nextDevices = { ...prev.devices };
+                delete nextDevices[cleanId];
+                return { ...prev, devices: nextDevices };
+            });
+            return { success: true, ...res.data };
+        } catch (err) {
+            console.warn("Cloud Function unhold unreachable, executing local unhold:", err.message);
+            try {
+                const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
+                const deviceRef = doc(db, 'devices', cleanId);
+                const snap = await getDoc(deviceRef);
+                if (!snap.exists()) return { success: false, message: `Unit "${cleanId}" not found.` };
+                const unit = snap.data();
+
+                const holdStationName = unit.holdStation;
+                const timestamp = new Date().toISOString();
+                const movementId = generateCalcMovementId('UNHOLD');
+
+                const historyEntry = {
+                    station: holdStationName,
+                    stationId: unit.holdStationId || unit.currentStation,
+                    timestamp,
+                    result: 'UNHOLD',
+                    operator: 'LOCAL_OPERATOR',
+                    looper: unit.looper,
+                    project: 'Calculator',
+                    movementId,
+                    details: {
+                        unholdBy: 'LOCAL_OPERATOR',
+                        unholdAt: timestamp,
+                        previousHoldReason: unit.holdReason,
+                        previousHoldRemarks: unit.holdRemarks,
+                        previousHoldTimestamp: unit.holdTimestamp
+                    }
+                };
+
+                unit.holdStatus = null;
+                unit.holdStation = null;
+                unit.holdStationId = null;
+                unit.holdReason = null;
+                unit.holdRemarks = null;
+                unit.holdTimestamp = null;
+                unit.holdUserId = null;
+                unit.updatedAt = timestamp;
+                unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices };
+                    delete nextDevices[cleanId];
+                    return { ...prev, devices: nextDevices };
+                });
+                return { success: true, station: holdStationName, movementId };
+            } catch (localErr) {
+                console.error("Local unhold error:", localErr);
+                return { success: false, message: localErr.message };
+            }
+        }
+    }, []);
+
+    const processScrapAnalysis = useCallback(async (data) => {
+        try {
+            const scrapFn = httpsCallable(functions, 'processScrapAnalysis');
+            const res = await scrapFn(data);
+            if (data.serialNumber) {
+                const cleanId = data.serialNumber.trim().toUpperCase().replace(/\//g, '-');
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices };
+                    delete nextDevices[cleanId];
+                    return { ...prev, devices: nextDevices };
+                });
+            }
+            return { success: true, ...res.data };
+        } catch (err) {
+            console.warn("Cloud Function scrap analysis unreachable, executing local scrap action:", err.message);
+            try {
+                const { serialNumber, action, scrapReason, scrapRemarks, returnReason, returnRemarks } = data;
+                const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
+                const deviceRef = doc(db, 'devices', cleanId);
+                const snap = await getDoc(deviceRef);
+                if (!snap.exists()) return { success: false, message: `Unit "${cleanId}" not found.` };
+                const unit = snap.data();
+                const timestamp = new Date().toISOString();
+                const movementId = generateCalcMovementId('SCRAP');
+
+                if (action === 'APPROVE_SCRAP') {
+                    const historyEntry = {
+                        station: 'SCRAP ANALYSIS',
+                        stationId: 9,
+                        timestamp,
+                        result: 'SCRAPPED',
+                        operator: 'SCRAP_OFFICER',
+                        looper: unit.looper,
+                        project: 'Calculator',
+                        movementId,
+                        details: {
+                            action: 'APPROVE_SCRAP',
+                            scrapReason: scrapReason.trim(),
+                            scrapRemarks: scrapRemarks.trim(),
+                            scrapApprovedAt: timestamp
+                        }
+                    };
+
+                    unit.status = 'SCRAPPED';
+                    unit.lockDate = timestamp;
+                    unit.scrapApprovedAt = timestamp;
+                    unit.scrapReason = scrapReason.trim();
+                    unit.updatedAt = timestamp;
+                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                    setStore(prev => {
+                        const nextDevices = { ...prev.devices };
+                        delete nextDevices[cleanId];
+                        return { ...prev, devices: nextDevices };
+                    });
+                    return { success: true, action: 'APPROVE_SCRAP', status: 'SCRAPPED', movementId };
+                }
+
+                if (action === 'RETURN_TO_PREVIOUS') {
+                    const inboundMovementId = unit.scrapInboundMovementId;
+                    const history = Array.isArray(unit.history) ? unit.history : [];
+                    let inboundEntry = inboundMovementId ? history.find(h => h.movementId === inboundMovementId) : null;
+                    if (!inboundEntry) {
+                        inboundEntry = [...history].reverse().find(h => h.stationId !== 9);
+                    }
+
+                    const returnStationId = inboundEntry?.fromStationId || inboundEntry?.stationId || 4;
+                    const returnStationName = inboundEntry?.fromStationName || inboundEntry?.station || 'HARDWARE QC / DEBUG';
+
+                    const historyEntry = {
+                        station: 'SCRAP ANALYSIS',
+                        stationId: 9,
+                        timestamp,
+                        result: 'RETURNED_TO_PREVIOUS',
+                        operator: 'SCRAP_OFFICER',
+                        looper: unit.looper,
+                        project: 'Calculator',
+                        movementId,
+                        details: {
+                            action: 'RETURN_TO_PREVIOUS',
+                            returnReason: returnReason.trim(),
+                            returnRemarks: returnRemarks.trim(),
+                            returnedTo: returnStationName,
+                            returnedToStationId: returnStationId,
+                            inboundMovementId: inboundMovementId || 'N/A',
+                            returnedAt: timestamp
+                        }
+                    };
+
+                    unit.currentStation = returnStationId;
+                    unit.stationName = returnStationName;
+                    unit.status = 'Processing';
+                    unit.scrapInboundMovementId = null;
+                    unit.updatedAt = timestamp;
+                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
+
+                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
+                    setStore(prev => {
+                        const nextDevices = { ...prev.devices };
+                        delete nextDevices[cleanId];
+                        return { ...prev, devices: nextDevices };
+                    });
+                    return {
+                        success: true,
+                        action: 'RETURN_TO_PREVIOUS',
+                        destination: returnStationName,
+                        destinationId: returnStationId,
+                        movementId
+                    };
+                }
+            } catch (localErr) {
+                console.error("Local scrap action error:", localErr);
+                return { success: false, message: localErr.message };
+            }
+        }
+    }, []);
+
     const contextValue = {
         store, loading, 
         getUnit: getUnitById, 
         validateScan: validateScanStatus, 
         processUnit, bulkProcessUnits, fetchStationMetrics, uploadProofImage,
         validateMovementUnits, executeAdminMovement, reverseAdminMovement, fetchAdminMovements,
+        unholdCalculatorSerial, processScrapAnalysis,
         systemNames, getDisplayName, getProjectCategory, resolveActiveProject, authenticateUser,
         createUser: async (u) => setDoc(doc(db, 'users', u.id), u),
         updateUser: async (oldId, userData) => {
@@ -1037,7 +1570,7 @@ export const CQAProvider = ({ children }) => {
                     if (typeof filters === 'string') {
                         if (filters === 'all') shouldDelete = true;
                         else if (filters === 'completed' && data.status === 'Completed') shouldDelete = true;
-                        else if (filters === 'scrap' && (data.status === 'Scrap' || data.status === 'Reject')) shouldDelete = true;
+                        else if (filters === 'scrap' && (data.status === 'Scrap' || data.status === 'Reject' || data.status === 'SCRAPPED')) shouldDelete = true;
                     }
                     // Handle specific filters (object)
                     else {

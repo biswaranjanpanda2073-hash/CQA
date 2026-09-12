@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import {
     LayoutDashboard,
@@ -1318,21 +1319,62 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const dropdownRef = React.useRef(null);
+    const menuRef = React.useRef(null);
     const searchInputRef = React.useRef(null);
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 380, openAbove: false });
 
     const selectedPart = useMemo(() => {
         return parts.find(p => p.id === value);
     }, [parts, value]);
 
+    const updateCoords = () => {
+        if (!dropdownRef.current) return;
+        const rect = dropdownRef.current.getBoundingClientRect();
+        const dropdownHeight = 310;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const openAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
+        
+        const desiredWidth = Math.max(rect.width, 380);
+        let left = rect.left;
+        if (left + desiredWidth > window.innerWidth - 16) {
+            left = Math.max(16, window.innerWidth - desiredWidth - 16);
+        }
+
+        setCoords({
+            top: openAbove ? rect.top : (rect.bottom + 4),
+            left,
+            width: desiredWidth,
+            openAbove
+        });
+    };
+
     useEffect(() => {
+        if (!isOpen) return;
+        updateCoords();
+
         const handleClickOutside = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+            if (
+                dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+                (!menuRef.current || !menuRef.current.contains(e.target))
+            ) {
                 setIsOpen(false);
             }
         };
+
+        const handleScrollOrResize = () => {
+            updateCoords();
+        };
+
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+        window.addEventListener('scroll', handleScrollOrResize, true);
+        window.addEventListener('resize', handleScrollOrResize);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+            window.removeEventListener('resize', handleScrollOrResize);
+        };
+    }, [isOpen]);
 
     const filteredParts = useMemo(() => {
         if (!searchTerm.trim()) return parts;
@@ -1361,6 +1403,7 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
         setIsOpen(nextState);
         if (nextState) {
             setTimeout(() => {
+                updateCoords();
                 if (searchInputRef.current) {
                     searchInputRef.current.focus();
                 }
@@ -1423,22 +1466,28 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
                 </div>
             </div>
 
-            {isOpen && (
+            {isOpen && createPortal(
                 <div 
+                    ref={menuRef}
                     style={{
-                        position: 'absolute',
-                        top: 'calc(100% + 4px)',
-                        left: 0,
-                        right: 0,
-                        zIndex: 50,
-                        background: 'var(--baan-surface)',
+                        position: 'fixed',
+                        ...(coords.openAbove
+                            ? { bottom: `${window.innerHeight - coords.top + 4}px` }
+                            : { top: `${coords.top}px` }),
+                        left: `${coords.left}px`,
+                        width: `${coords.width}px`,
+                        maxWidth: 'calc(100vw - 24px)',
+                        zIndex: 99999,
+                        background: 'var(--baan-surface, #ffffff)',
                         border: '1px solid var(--baan-border)',
                         borderRadius: 'var(--baan-radius-md, 8px)',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                        overflow: 'hidden'
+                        boxShadow: '0 16px 36px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.12)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column'
                     }}
                 >
-                    <div style={{ padding: '0.5rem', borderBottom: '1px solid var(--baan-border)', background: 'var(--baan-surface-muted)' }}>
+                    <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--baan-border)', background: 'var(--baan-surface-muted)' }}>
                         <div style={{ position: 'relative' }}>
                             <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--baan-text-muted)' }} />
                             <input
@@ -1450,16 +1499,17 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
                                 onClick={e => e.stopPropagation()}
                                 className="baan-input"
                                 style={{
-                                    paddingLeft: '2rem',
+                                    paddingLeft: '2.1rem',
                                     height: '36px',
                                     fontSize: '0.85rem',
-                                    background: 'var(--baan-surface)'
+                                    background: 'var(--baan-surface)',
+                                    width: '100%'
                                 }}
                             />
                         </div>
                     </div>
 
-                    <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                    <div style={{ maxHeight: '230px', overflowY: 'auto', padding: '4px 0' }}>
                         {filteredParts.map(part => {
                             const isSelected = part.id === value;
                             return (
@@ -1467,93 +1517,138 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
                                     key={part.id}
                                     onClick={() => handleSelect(part.id)}
                                     style={{
-                                        padding: '0.6rem 0.85rem',
+                                        padding: '0.65rem 0.85rem',
                                         cursor: 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
                                         background: isSelected ? 'var(--baan-accent-alpha)' : 'transparent',
                                         borderLeft: isSelected ? '3px solid var(--baan-accent)' : '3px solid transparent',
-                                        transition: 'background 0.1s ease'
+                                        transition: 'background 0.12s ease'
                                     }}
                                     onMouseEnter={e => {
-                                        if (!isSelected) e.currentTarget.style.background = 'var(--baan-table-row-hover)';
+                                        if (!isSelected) e.currentTarget.style.background = 'var(--baan-table-row-hover, rgba(0,0,0,0.04))';
                                     }}
                                     onMouseLeave={e => {
                                         if (!isSelected) e.currentTarget.style.background = 'transparent';
                                     }}
                                 >
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span className="font-bold text-mono" style={{ color: 'var(--baan-accent)', fontSize: '0.85rem' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            <span className="font-bold text-mono" style={{ color: 'var(--baan-accent)', fontSize: '0.875rem' }}>
                                                 {part.id}
                                             </span>
                                             {part.uom && (
-                                                <span className="text-xs text-muted">({part.uom})</span>
+                                                <span style={{ fontSize: '0.72rem', padding: '1px 6px', borderRadius: '4px', background: 'var(--baan-surface-muted)', color: 'var(--baan-text-muted)', border: '1px solid var(--baan-border)' }}>
+                                                    {part.uom}
+                                                </span>
                                             )}
                                         </div>
-                                        <span className="font-semibold text-xs" style={{ color: 'var(--baan-text-primary)' }}>
+                                        <span style={{ color: 'var(--baan-text-primary)', fontSize: '0.82rem', fontWeight: 500, lineHeight: 1.35 }}>
                                             {part.name}
                                         </span>
                                     </div>
                                     {isSelected && (
-                                        <CheckCircle2 size={14} style={{ color: 'var(--baan-accent)' }} />
+                                        <CheckCircle2 size={16} style={{ color: 'var(--baan-accent)', flexShrink: 0, marginLeft: '0.5rem' }} />
                                     )}
                                 </div>
                             );
                         })}
 
                         {filteredParts.length === 0 && (
-                            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--baan-text-muted)', fontSize: '0.8rem' }}>
-                                No component SKU matching "{searchTerm}"
+                            <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: 'var(--baan-text-muted)', fontSize: '0.82rem' }}>
+                                No component SKU matching "${searchTerm}"
                             </div>
                         )}
                     </div>
-                </div>
+
+                    <div style={{
+                        padding: '0.45rem 0.85rem',
+                        background: 'var(--baan-surface-muted)',
+                        borderTop: '1px solid var(--baan-border)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.73rem',
+                        color: 'var(--baan-text-muted)'
+                    }}>
+                        <span>{filteredParts.length} {filteredParts.length === 1 ? 'component' : 'components'} available</span>
+                        {searchTerm && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchTerm('')}
+                                style={{ background: 'none', border: 'none', color: 'var(--baan-accent)', cursor: 'pointer', fontSize: '0.73rem', padding: 0 }}
+                            >
+                                Clear search
+                            </button>
+                        )}
+                    </div>
+                </div>,
+                document.body
             )}
         </div>
     );
 };
 
+const EMPTY_ROW = () => ({ partNumber: '', requiredQty: 1 });
+
+
 const BaanRequest = () => {
     const { store, requestBaanPart } = useCQA();
-    const [partNumber, setPartNumber] = useState('');
-    const [requiredQty, setRequiredQty] = useState(1);
-    
+
+    const [rows, setRows] = useState([EMPTY_ROW()]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
-    const availableParts = useMemo(() => 
-        Object.values(store.baan.parts || {}).sort((a,b) => a.id.localeCompare(b.id)), 
+    const availableParts = useMemo(() =>
+        Object.values(store.baan.parts || {}).sort((a, b) => a.id.localeCompare(b.id)),
     [store.baan.parts]);
 
-    const partName = store.baan.parts?.[partNumber]?.name || '';
-    
-    const availableQty = useMemo(() => {
-        if (!partNumber) return 0;
-        return Object.values(store.baan.batches || {})
-            .filter(b => b.partNumber === partNumber)
-            .reduce((acc, b) => acc + (Number(b.quantityAvailable) || 0), 0);
-    }, [partNumber, store.baan.batches]);
+    const rowMeta = useMemo(() => rows.map(r => {
+        const part = store.baan.parts?.[r.partNumber] || null;
+        const stock = r.partNumber
+            ? Object.values(store.baan.batches || {})
+                .filter(b => b.partNumber === r.partNumber)
+                .reduce((acc, b) => acc + (Number(b.quantityAvailable) || 0), 0)
+            : 0;
+        return { partName: part?.name || '', availableStock: stock };
+    }), [rows, store.baan.parts, store.baan.batches]);
+
+    const updateRow = (idx, field, value) => {
+        setRows(prev => {
+            const next = [...prev];
+            next[idx] = { ...next[idx], [field]: value };
+            return next;
+        });
+        setErrorMessage(null);
+    };
+
+    const addRow = () => setRows(prev => [...prev, EMPTY_ROW()]);
+    const removeRow = (idx) =>
+        setRows(prev => prev.length === 1 ? [EMPTY_ROW()] : prev.filter((_, i) => i !== idx));
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setErrorMessage(null);
-        
-        if (!partNumber) {
-            setErrorMessage('Please select a Part Number.');
-            return;
-        }
-        
-        if (requiredQty <= 0) {
-            setErrorMessage('Required Quantity must be at least 1.');
-            return;
+
+        const validRows = rows.filter(r => r.partNumber);
+        if (validRows.length === 0) { setErrorMessage('Please select at least one Part Number.'); return; }
+
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r.partNumber) continue;
+            const meta = rowMeta[i];
+            if (r.requiredQty <= 0) { setErrorMessage(`Row ${i + 1}: Quantity must be at least 1.`); return; }
+            if (r.requiredQty > meta.availableStock) {
+                setErrorMessage(`Row ${i + 1} (${r.partNumber}): Only ${meta.availableStock} units available.`); return;
+            }
         }
 
-        if (requiredQty > availableQty) {
-            setErrorMessage(`Insufficient Stock! Available: ${availableQty} units. Request blocked.`);
-            return;
+        const partNos = validRows.map(r => r.partNumber);
+        const dupes = partNos.filter((p, i) => partNos.indexOf(p) !== i);
+        if (dupes.length > 0) {
+            setErrorMessage(`Duplicate part: ${[...new Set(dupes)].join(', ')}. Merge into one row.`); return;
         }
 
         setIsSubmitting(true);
@@ -1561,140 +1656,372 @@ const BaanRequest = () => {
 
         try {
             const user = JSON.parse(localStorage.getItem('cqa_user') || '{}');
-            const requestData = {
-                partNo: partNumber,
-                partName: partName,
-                requestedQty: requiredQty
-            };
-            const res = await requestBaanPart(requestData, user);
-            
-            if (res.success) {
-                setPartNumber('');
-                setRequiredQty(1);
-                setStatusMessage(`Request submitted successfully! Generated Request ID: ${res.requestId}`);
-                setTimeout(() => setStatusMessage(null), 8000);
-            } else {
-                setErrorMessage(res.message || 'Failed to submit request.');
+            const batchRef = `MREQ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+            const results = [];
+            for (const r of validRows) {
+                const meta = rowMeta[rows.indexOf(r)];
+                const res = await requestBaanPart({
+                    partNo: r.partNumber,
+                    partName: meta.partName,
+                    requestedQty: r.requiredQty,
+                    batchRequestRef: batchRef,
+                    totalLineItems: validRows.length
+                }, user);
+                results.push(res);
             }
-        } catch (error) {
-            console.error(error);
-            setErrorMessage('A network error occurred.');
+
+            const allOk = results.every(r => r.success);
+            if (allOk) {
+                setRows([EMPTY_ROW()]);
+                const ids = results.map(r => r.requestId).join(', ');
+                setStatusMessage(validRows.length === 1
+                    ? `✓ Request submitted! ID: ${ids}`
+                    : `✓ ${validRows.length} requests submitted! IDs: ${ids}`
+                );
+                setTimeout(() => setStatusMessage(null), 10000);
+            } else {
+                setErrorMessage(results.filter(r => !r.success).map(r => r.message).join('; '));
+            }
+        } catch (err) {
+            console.error(err);
+            setErrorMessage('Network error. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const selectedCount = rows.filter(r => r.partNumber).length;
+    const totalUnits   = rows.filter(r => r.partNumber).reduce((s, r) => s + Number(r.requiredQty || 0), 0);
+    const uniqueParts  = new Set(rows.filter(r => r.partNumber).map(r => r.partNumber)).size;
+
     return (
-        <div className="animate-fade-in" style={{ maxWidth: '720px', margin: '0 auto' }}>
-            <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
-                <div>
-                    <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>Material Part Request</h2>
-                    <p className="baan-subtitle">Create material requisition for repair or rework stations</p>
-                </div>
+        <div className="animate-fade-in" style={{ width: '100%' }}>
+
+            {/* ── Page Header ── */}
+            <div style={{ marginBottom: '1.75rem' }}>
+                <h2 className="baan-title" style={{ fontSize: '1.4rem', marginBottom: '0.3rem' }}>
+                    Material Part Request
+                </h2>
+                <p className="baan-subtitle">
+                    Create a single or multi-line material requisition for repair and rework stations
+                </p>
             </div>
 
+            {/* ── Alert Banners ── */}
             {statusMessage && (
-                <div className="baan-card" style={{ 
-                    padding: '0.875rem 1.25rem', 
-                    marginBottom: '1.25rem',
-                    borderLeft: '4px solid var(--baan-success)',
-                    background: 'var(--baan-success-bg)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem'
+                <div style={{
+                    padding: '1rem 1.5rem', marginBottom: '1.5rem',
+                    borderLeft: '4px solid var(--baan-success)', background: 'var(--baan-success-bg)',
+                    borderRadius: 8, display: 'flex', alignItems: 'center', gap: '0.875rem'
                 }}>
-                    <CheckCircle2 size={20} style={{ color: 'var(--baan-success)' }} />
-                    <span className="text-sm font-bold">{statusMessage}</span>
+                    <CheckCircle2 size={22} style={{ color: 'var(--baan-success)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{statusMessage}</span>
                 </div>
             )}
-            
             {errorMessage && (
-                <div className="baan-card" style={{ 
-                    padding: '0.875rem 1.25rem', 
-                    marginBottom: '1.25rem',
-                    borderLeft: '4px solid var(--baan-danger)',
-                    background: 'var(--baan-danger-bg)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem'
+                <div style={{
+                    padding: '1rem 1.5rem', marginBottom: '1.5rem',
+                    borderLeft: '4px solid var(--baan-danger)', background: 'var(--baan-danger-bg)',
+                    borderRadius: 8, display: 'flex', alignItems: 'center', gap: '0.875rem'
                 }}>
-                    <AlertTriangle size={20} style={{ color: 'var(--baan-danger)' }} />
-                    <span className="text-sm font-bold">{errorMessage}</span>
+                    <AlertTriangle size={22} style={{ color: 'var(--baan-danger)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{errorMessage}</span>
                 </div>
             )}
 
-            <div className="baan-card">
-                <div className="baan-card-header">
-                    <div className="baan-card-title">
-                        <Send size={16} style={{ color: 'var(--baan-accent)' }} /> Requisition Form
-                    </div>
-                </div>
-                <form className="baan-card-body" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    <div className="baan-input-group">
-                        <label>Select Part Number *</label>
-                        <BaanSearchablePartSelect 
-                            parts={availableParts}
-                            value={partNumber}
-                            onChange={setPartNumber}
-                            placeholder="-- Search Part Number or Name --"
-                        />
+            {/* ── Two-column Layout ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem', alignItems: 'start' }}>
+
+                {/* ══ LEFT: Requisition Table ══ */}
+                <form className="baan-card" onSubmit={handleSubmit} style={{ minWidth: 0, overflow: 'visible' }}>
+                    <div className="baan-card-header" style={{ padding: '1rem 1.5rem' }}>
+                        <div className="baan-card-title" style={{ fontSize: '0.95rem' }}>
+                            <Send size={16} style={{ color: 'var(--baan-accent)' }} />
+                            Requisition Form
+                        </div>
+                        <span className="baan-badge neutral">
+                            {selectedCount} of {rows.length} {rows.length === 1 ? 'row' : 'rows'} filled
+                        </span>
                     </div>
 
-                    <div className="grid md-grid-2 gap-4">
-                        <div className="baan-input-group">
-                            <label>Part Description</label>
-                            <input 
-                                type="text" 
-                                value={partName || 'Auto-populated on selection'}
-                                readOnly
-                            />
+                    <div style={{ padding: '0 1.5rem 1.5rem 1.5rem' }}>
+
+                        {/* Table Header */}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 110px 120px 44px',
+                            gap: '1rem',
+                            padding: '0.75rem 0.5rem',
+                            borderBottom: '2px solid var(--baan-border)',
+                            marginBottom: '0.25rem'
+                        }}>
+                            {[
+                                { label: 'Part Number', req: true },
+                                { label: 'Description', req: false },
+                                { label: 'In Stock', req: false },
+                                { label: 'Quantity', req: true },
+                                { label: '', req: false }
+                            ].map((col, i) => (
+                                <div key={i} style={{
+                                    fontSize: '0.73rem', fontWeight: 700,
+                                    color: 'var(--baan-text-muted)',
+                                    textTransform: 'uppercase', letterSpacing: '0.06em'
+                                }}>
+                                    {col.label}{col.req && <span style={{ color: 'var(--baan-danger)', marginLeft: 2 }}>*</span>}
+                                </div>
+                            ))}
                         </div>
 
-                        <div className="baan-input-group">
-                            <label>Available Stock Balance</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <input 
-                                    type="text" 
-                                    className="font-bold text-mono"
-                                    value={partNumber ? `${availableQty} Units` : '—'}
-                                    readOnly
-                                />
-                                {partNumber && (
-                                    <span className={`baan-badge ${availableQty > 0 ? 'success' : 'danger'}`}>
-                                        {availableQty > 0 ? 'In Stock' : 'Out of Stock'}
-                                    </span>
+                        {/* Part Rows */}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            {rows.map((row, idx) => {
+                                const meta = rowMeta[idx];
+                                const hasStock = meta.availableStock > 0;
+                                const overQty = row.partNumber && row.requiredQty > meta.availableStock;
+                                const isEven = idx % 2 === 0;
+
+                                return (
+                                    <div
+                                        key={idx}
+                                        style={{
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr 110px 120px 44px',
+                                            gap: '1rem',
+                                            alignItems: 'center',
+                                            padding: '0.75rem 0.5rem',
+                                            borderRadius: 6,
+                                            background: isEven ? 'transparent' : 'rgba(0,0,0,0.018)',
+                                            borderBottom: '1px solid var(--baan-border)'
+                                        }}
+                                    >
+                                        {/* Part Number Select */}
+                                        <BaanSearchablePartSelect
+                                            parts={availableParts}
+                                            value={row.partNumber}
+                                            onChange={v => updateRow(idx, 'partNumber', v)}
+                                            placeholder="Search part number..."
+                                        />
+
+                                        {/* Description — read only */}
+                                        <input
+                                            type="text"
+                                            value={meta.partName || ''}
+                                            readOnly
+                                            placeholder="Auto-filled"
+                                            title={meta.partName}
+                                            style={{
+                                                fontSize: '0.84rem',
+                                                background: 'var(--baan-bg-sub, #f5f6f8)',
+                                                color: 'var(--baan-text-muted)',
+                                                cursor: 'default',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        />
+
+                                        {/* Stock badge */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {row.partNumber ? (
+                                                <div style={{ textAlign: 'center' }}>
+                                                    <span className={`baan-badge ${hasStock ? 'success' : 'danger'}`}
+                                                        style={{ fontSize: '0.78rem', display: 'block', padding: '0.25rem 0.6rem', fontWeight: 700 }}>
+                                                        {meta.availableStock.toLocaleString()}
+                                                    </span>
+                                                    <div style={{ fontSize: '0.65rem', color: 'var(--baan-text-muted)', marginTop: 2 }}>
+                                                        {hasStock ? 'available' : 'out of stock'}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span style={{ color: 'var(--baan-text-muted)', fontSize: '1rem' }}>—</span>
+                                            )}
+                                        </div>
+
+                                        {/* Quantity */}
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max={meta.availableStock || undefined}
+                                            value={row.requiredQty}
+                                            onChange={e => updateRow(idx, 'requiredQty', Math.max(1, parseInt(e.target.value) || 1))}
+                                            style={{
+                                                fontSize: '1rem', fontWeight: 700, textAlign: 'center',
+                                                borderColor: overQty ? 'var(--baan-danger)' : undefined,
+                                                background: overQty ? 'var(--baan-danger-bg)' : undefined,
+                                                color: overQty ? 'var(--baan-danger)' : undefined
+                                            }}
+                                        />
+
+                                        {/* Remove */}
+                                        <button
+                                            type="button"
+                                            onClick={() => removeRow(idx)}
+                                            title={rows.length === 1 ? 'Clear row' : 'Remove row'}
+                                            style={{
+                                                background: 'none', border: '1.5px solid var(--baan-border)',
+                                                borderRadius: 8, cursor: 'pointer',
+                                                color: 'var(--baan-text-muted)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                height: 38, width: 38, transition: 'all 0.15s',
+                                                flexShrink: 0
+                                            }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.background = 'var(--baan-danger-bg)';
+                                                e.currentTarget.style.borderColor = 'var(--baan-danger)';
+                                                e.currentTarget.style.color = 'var(--baan-danger)';
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.background = 'none';
+                                                e.currentTarget.style.borderColor = 'var(--baan-border)';
+                                                e.currentTarget.style.color = 'var(--baan-text-muted)';
+                                            }}
+                                        >
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* ── Add More Row ── */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '1rem',
+                            paddingTop: '1rem', marginTop: '0.5rem',
+                            borderTop: '1.5px dashed var(--baan-border)'
+                        }}>
+                            <button
+                                type="button"
+                                className="baan-btn secondary"
+                                onClick={addRow}
+                                style={{ height: 42, padding: '0 1.25rem', fontSize: '0.875rem', gap: '0.5rem', flexShrink: 0 }}
+                            >
+                                <PlusCircle size={16} />
+                                Add More Parts
+                            </button>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--baan-text-muted)', lineHeight: 1.4 }}>
+                                Add more line items to request multiple parts in a single requisition
+                            </span>
+                        </div>
+
+                        {/* ── Submit ── */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--baan-border)' }}>
+                            <button
+                                type="submit"
+                                className="baan-btn primary"
+                                disabled={isSubmitting || selectedCount === 0}
+                                style={{ height: 48, padding: '0 2.5rem', fontSize: '0.95rem', gap: '0.5rem' }}
+                            >
+                                {isSubmitting ? (
+                                    <><Loader2 className="animate-spin" size={17} /> Submitting...</>
+                                ) : (
+                                    <><Send size={17} />
+                                    {selectedCount > 1
+                                        ? `Submit ${selectedCount} Part Requests`
+                                        : 'Submit Material Request'}
+                                    </>
                                 )}
-                            </div>
+                            </button>
                         </div>
-                    </div>
-
-                    <div className="baan-input-group">
-                        <label>Required Quantity *</label>
-                        <input 
-                            type="number" 
-                            min="1"
-                            max={availableQty || undefined}
-                            value={requiredQty}
-                            onChange={(e) => setRequiredQty(parseInt(e.target.value) || 0)}
-                            required
-                        />
-                    </div>
-
-                    <div className="flex-end" style={{ marginTop: '0.5rem' }}>
-                        <button 
-                            type="submit" 
-                            className="baan-btn primary"
-                            disabled={isSubmitting || !partNumber || availableQty === 0}
-                            style={{ height: 46, padding: '0 2rem' }}
-                        >
-                            {isSubmitting ? (
-                                <><Loader2 className="animate-spin" size={16} /> Submitting...</>
-                            ) : (
-                                <><Send size={16} /> Submit Material Request</>
-                            )}
-                        </button>
                     </div>
                 </form>
+
+                {/* ══ RIGHT: Summary Panel ══ */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', position: 'sticky', top: '1rem' }}>
+
+                    {/* Requisition Summary Card */}
+                    <div className="baan-card">
+                        <div className="baan-card-header" style={{ padding: '0.875rem 1.25rem' }}>
+                            <div className="baan-card-title" style={{ fontSize: '0.875rem' }}>
+                                <Package size={15} style={{ color: 'var(--baan-accent)' }} />
+                                Requisition Summary
+                            </div>
+                        </div>
+                        <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                            {[
+                                { label: 'Line Items', value: selectedCount || '—', highlight: selectedCount > 0 },
+                                { label: 'Total Units', value: totalUnits > 0 ? totalUnits.toLocaleString() : '—', highlight: totalUnits > 0 },
+                                { label: 'Unique Parts', value: uniqueParts || '—', highlight: uniqueParts > 0 },
+                            ].map(({ label, value, highlight }) => (
+                                <div key={label} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '0.625rem 0.875rem',
+                                    background: 'var(--baan-bg-sub, #f8fafc)',
+                                    borderRadius: 8, border: '1px solid var(--baan-border)'
+                                }}>
+                                    <span style={{ fontSize: '0.82rem', color: 'var(--baan-text-muted)' }}>{label}</span>
+                                    <strong style={{
+                                        fontSize: '1.1rem',
+                                        color: highlight ? 'var(--baan-accent)' : 'var(--baan-text-muted)'
+                                    }}>{value}</strong>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Line Items Preview */}
+                    {selectedCount > 0 && (
+                        <div className="baan-card">
+                            <div className="baan-card-header" style={{ padding: '0.875rem 1.25rem' }}>
+                                <div className="baan-card-title" style={{ fontSize: '0.875rem' }}>
+                                    <ClipboardList size={15} style={{ color: 'var(--baan-accent)' }} />
+                                    Selected Parts
+                                </div>
+                            </div>
+                            <div style={{ padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 280, overflowY: 'auto' }}>
+                                {rows.filter(r => r.partNumber).map((r, i) => {
+                                    const meta = rowMeta[rows.indexOf(r)];
+                                    const hasStock = meta.availableStock >= r.requiredQty;
+                                    return (
+                                        <div key={i} style={{
+                                            padding: '0.6rem 0.875rem',
+                                            borderRadius: 8,
+                                            background: hasStock ? 'var(--baan-success-bg, #f0fdf4)' : 'var(--baan-danger-bg, #fef2f2)',
+                                            border: `1px solid ${hasStock ? 'var(--baan-success-border, #bbf7d0)' : 'var(--baan-danger-border, #fecaca)'}`,
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                                        }}>
+                                            <div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.82rem', fontFamily: 'monospace', color: 'var(--baan-text)' }}>
+                                                    {r.partNumber}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--baan-text-muted)', marginTop: 1 }}>
+                                                    {meta.partName || 'Unknown'}
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                fontWeight: 700, fontSize: '0.9rem',
+                                                color: hasStock ? 'var(--baan-success)' : 'var(--baan-danger)',
+                                                background: 'white', borderRadius: 6,
+                                                padding: '0.2rem 0.6rem', border: '1px solid currentColor'
+                                            }}>
+                                                ×{r.requiredQty}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Instructions Card */}
+                    <div className="baan-card" style={{ background: 'var(--baan-bg-sub, #f8fafc)' }}>
+                        <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--baan-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+                                How it works
+                            </div>
+                            {[
+                                '1. Search and select a part from the BAAN master',
+                                '2. Set required quantity for each line',
+                                '3. Click Add More Parts to add additional items',
+                                '4. Submit — Store will receive and issue the parts',
+                            ].map((tip, i) => (
+                                <div key={i} style={{ fontSize: '0.78rem', color: 'var(--baan-text-muted)', display: 'flex', gap: '0.4rem', lineHeight: 1.5 }}>
+                                    {tip}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

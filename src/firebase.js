@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
     apiKey: "AIzaSyD53509zOsLXne2Hb9mEWjBEpvYyRl-VNw",
@@ -15,6 +17,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const auth = getAuth(app);
+const functions = getFunctions(app);
 
 // Collection references
 const devicesCol = collection(db, 'devices');
@@ -23,8 +27,10 @@ const settingsCol = collection(db, 'settings');
 const ticketsCol = collection(db, 'tickets');
 
 export { 
-    db, storage, devicesCol, usersCol, settingsCol, ticketsCol, 
+    app, db, storage, auth, functions, devicesCol, usersCol, settingsCol, ticketsCol, 
     doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, 
     query, orderBy, collection, where, addDoc, getCountFromServer,
-    ref, uploadBytes, getDownloadURL, uploadString 
+    ref, uploadBytes, getDownloadURL, uploadString,
+    signInWithCustomToken, onAuthStateChanged, signOut,
+    httpsCallable
 };

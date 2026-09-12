@@ -62,7 +62,11 @@ const AppContent = () => {
     let title = 'CQA – Industrial MES';
     switch (activeSection) {
       case 'dashboard': title = 'CQA – Dashboard'; break;
-      case 'info': title = 'CQA – Info Centre'; break;
+      case 'info': {
+        const projParam = urlParams.get('project');
+        title = projParam ? `CQA – Info Centre (${projParam})` : 'CQA – Info Centre';
+        break;
+      }
       case 'baan': title = 'CQA – BAAN Inventory'; break;
       case 'operation': title = 'CQA – Stations'; break;
       case 'profile': title = 'CQA – Profile'; break;
