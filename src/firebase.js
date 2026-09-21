@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer } from "firebase/firestore";
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer, limit } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -29,7 +29,7 @@ const ticketsCol = collection(db, 'tickets');
 export { 
     app, db, storage, auth, functions, devicesCol, usersCol, settingsCol, ticketsCol, 
     doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, 
-    query, orderBy, collection, where, addDoc, getCountFromServer,
+    query, orderBy, collection, where, addDoc, getCountFromServer, limit,
     ref, uploadBytes, getDownloadURL, uploadString,
     signInWithCustomToken, onAuthStateChanged, signOut,
     httpsCallable

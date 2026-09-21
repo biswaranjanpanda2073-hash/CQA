@@ -11,6 +11,7 @@ import { UserControlSection, MaintenanceSection } from './components/SettingsMod
 import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
 import BaanModule from './components/BaanModule';
+import AdminLayout from './components/admin/AdminLayout';
 
 const AppContent = () => {
   const { store } = useCQA();
@@ -24,7 +25,7 @@ const AppContent = () => {
     try {
       const params = new URLSearchParams(window.location.search);
       const section = params.get('section');
-      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance', 'unit-config'].includes(section)) {
+      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance', 'unit-config', 'admin', 'audit', 'rbac'].includes(section)) {
         return section;
       }
     } catch (e) { }
@@ -73,6 +74,9 @@ const AppContent = () => {
       case 'users': title = 'CQA – User Management'; break;
       case 'maintenance': title = 'CQA – Maintenance'; break;
       case 'unit-config': title = 'CQA – Unit/Serial Configuration'; break;
+      case 'admin': title = 'CQA – Admin Console'; break;
+      case 'audit': title = 'CQA – Audit & Compliance'; break;
+      case 'rbac': title = 'CQA – RBAC Permissions'; break;
     }
     document.title = title;
   }, [user, activeSection]);
@@ -148,9 +152,12 @@ const AppContent = () => {
       case 'info': return <InfoCentre user={user} onNavigateToConfig={(sn) => { setActiveSection('unit-config'); }} />;
       case 'baan': return <BaanModule user={user} />;
       case 'profile': return <UserControl user={user} />;
-      case 'users': return isAdmin ? <UserControlSection user={user} /> : <UserControl user={user} />;
-      case 'maintenance': return isAdmin ? <MaintenanceSection user={user} initialTab="controls" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
-      case 'unit-config': return isAdmin ? <MaintenanceSection user={user} initialTab="unit-config" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'admin': return isAdmin ? <AdminLayout user={user} initialTab="overview" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'users': return isAdmin ? <AdminLayout user={user} initialTab="users" /> : <UserControl user={user} />;
+      case 'maintenance': return isAdmin ? <AdminLayout user={user} initialTab="maintenance" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'unit-config': return isAdmin ? <AdminLayout user={user} initialTab="unit-config" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'audit': return isAdmin ? <AdminLayout user={user} initialTab="audit" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'rbac': return isAdmin ? <AdminLayout user={user} initialTab="rbac" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
       default: return <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
     }
   };

@@ -22,6 +22,15 @@ import {
     CALC_SCRAP_ELIGIBLE_FROM,
     getCalcStationById
 } from '../utils/calculatorEngine';
+import { hasPermission, PERMISSIONS } from '../utils/rbacEngine';
+import { logAdminAction, AUDIT_ACTIONS } from '../utils/auditLogger';
+import {
+    subscribeConfigGovernance,
+    isDynamicConfigActive,
+    getSafeWorkflow,
+    getSafeCheckpoints,
+    getSafeProjectList
+} from '../utils/configReader';
 
 const INITIAL_STORE = {
     devices: {},
@@ -68,6 +77,30 @@ export const CQAProvider = ({ children }) => {
             }
         });
         return () => unsubscribe();
+    }, []);
+
+    // ===== CONFIG GOVERNANCE & RBAC LISTENERS =====
+    const [customRoles, setCustomRoles] = useState({});
+    const [configGov, setConfigGov] = useState({ isBootstrapped: false, dynamicConfigEnabled: false });
+
+    useEffect(() => {
+        const unsubGov = subscribeConfigGovernance((gov) => {
+            setConfigGov(gov);
+        });
+        return () => unsubGov();
+    }, []);
+
+    useEffect(() => {
+        const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
+            const rolesMap = {};
+            snapshot.forEach(docSnap => {
+                rolesMap[docSnap.id] = docSnap.data();
+            });
+            setCustomRoles(rolesMap);
+        }, (err) => {
+            console.warn('[useCQA] Roles listener fallback to defaults:', err);
+        });
+        return () => unsubRoles();
     }, []);
 
     const getDisplayName = useCallback((type, id) => {
@@ -2159,7 +2192,16 @@ export const CQAProvider = ({ children }) => {
 
             return recommendations;
         },
-        syncBaanData
+        syncBaanData,
+        // Phase 1 Governance & Safe Dynamic Configuration
+        customRoles,
+        configGov,
+        hasUserPermission: (userObj, permKey) => hasPermission(userObj, permKey, customRoles),
+        logAuditAction: logAdminAction,
+        getSafeWorkflow: (projectId, customWorkflows) => getSafeWorkflow(projectId, customWorkflows),
+        getSafeCheckpoints: (projectId, stationId, customCheckpoints) => getSafeCheckpoints(projectId, stationId, customCheckpoints),
+        getSafeProjectList: (customProjects) => getSafeProjectList(customProjects),
+        isDynamicConfigActive: () => isDynamicConfigActive()
     };
 
     return <CQAContext.Provider value={contextValue}>{children}</CQAContext.Provider>;

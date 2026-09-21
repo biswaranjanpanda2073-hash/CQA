@@ -12,11 +12,14 @@ import {
     ChevronDown,
     Factory,
     Database,
-    Layers
+    Layers,
+    Sliders,
+    History,
+    Shield
 } from 'lucide-react';
 
 const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setOpen }) => {
-    const [settingsOpen, setSettingsOpen] = useState(['users', 'maintenance', 'unit-config'].includes(activeSection));
+    const [settingsOpen, setSettingsOpen] = useState(['admin', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection));
 
     const mainItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -26,12 +29,15 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
     ];
 
     const settingsSubItems = [
-        { id: 'users', label: 'User Control', icon: ShieldCheck },
-        { id: 'maintenance', label: 'Maintenance', icon: Wrench },
-        { id: 'unit-config', label: 'Unit/Serial Configuration', icon: Layers },
+        { id: 'admin', label: 'Admin Console', icon: Sliders },
+        { id: 'rbac', label: 'Role & Access (RBAC)', icon: Shield },
+        { id: 'users', label: 'User Governance', icon: ShieldCheck },
+        { id: 'unit-config', label: 'Unit/Serial Config', icon: Layers },
+        { id: 'audit', label: 'Compliance & Audit', icon: History },
+        { id: 'maintenance', label: 'Maintenance Mode', icon: Wrench },
     ];
 
-    const isSettingsActive = ['users', 'maintenance', 'unit-config'].includes(activeSection);
+    const isSettingsActive = ['admin', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection);
 
     const handleNav = (id) => {
         if (id === 'info') {

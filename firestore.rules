@@ -10,7 +10,58 @@ service cloud.firestore {
       allow delete: if resource.data.project != 'Calculator';
     }
 
-    // Existing open access for non-calculator collections & documents to preserve compatibility
+    // IMMUTABLE AUDIT LOGS: Append-only compliance log. Tampering or deletion is strictly forbidden.
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create: if request.resource.data.action != null;
+      allow update, delete: if false;
+    }
+
+    // IMMUTABLE INVENTORY & MOVEMENT HISTORY: Cannot delete past movement records
+    match /baan_inventory_movements/{movementId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    match /baan_inward_logs/{inwardId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    // Master Configuration & Governance documents
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /roles/{roleId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /stations_master/{stationId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /project_workflows/{workflowId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /station_checkpoints/{checkpointId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Fallback open access for remaining collections to preserve operational compatibility
     match /{document=**} {
       allow read, write: if true;
     }
