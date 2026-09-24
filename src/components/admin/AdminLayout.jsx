@@ -94,32 +94,47 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
     return (
         <div className="animate-fade-in" style={{ paddingBottom: '3rem' }}>
             {/* Admin Header Strip */}
-            <div className="page-header" style={{ marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                            <span className="status-pill info" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                                Centralized Governance
+            <div className="page-header" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    flexWrap: 'wrap', 
+                    gap: '1.5rem' 
+                }}>
+                    <div style={{ flex: '1 1 auto', minWidth: '0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <span className="status-pill info" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '700' }}>
+                                CENTRALIZED GOVERNANCE
                             </span>
                             {isSuperAdmin && (
-                                <span className="status-pill warning" style={{ fontSize: '10px', textTransform: 'uppercase' }}>
-                                    Super Admin Privilege
+                                <span className="status-pill warning" style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
+                                    SUPER ADMIN PRIVILEGE
                                 </span>
                             )}
                         </div>
-                        <h1 className="page-title" style={{ fontSize: '1.75rem', letterSpacing: '-0.02em' }}>
+                        <h1 className="page-title" style={{ fontSize: '1.75rem', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
                             Admin Console
                         </h1>
-                        <p className="page-subtitle">
+                        <p className="page-subtitle" style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
                             Configure master data, project workflows, RBAC permissions, and system compliance
                         </p>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span className="text-xs font-bold text-muted uppercase">Signed in as:</span>
-                        <span className="font-bold text-xs" style={{ color: 'var(--primary)' }}>{user?.name || user?.id}</span>
-                        <span className={`status-pill ${isSuperAdmin ? 'warning' : 'primary'}`} style={{ fontSize: '10px' }}>
-                            {user?.role}
+                    <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.75rem',
+                        flexShrink: '0'
+                    }}>
+                        <span className="text-xs font-bold text-muted uppercase" style={{ whiteSpace: 'nowrap' }}>
+                            SIGNED IN AS:
+                        </span>
+                        <span className="font-bold text-xs" style={{ color: 'var(--primary)', whiteSpace: 'nowrap' }}>
+                            {user?.name || user?.id}
+                        </span>
+                        <span className={`status-pill ${isSuperAdmin ? 'warning' : 'primary'}`} style={{ fontSize: '10px', fontWeight: '700' }}>
+                            {user?.role?.toUpperCase()}
                         </span>
                     </div>
                 </div>
@@ -128,11 +143,14 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
             {/* Scrollable Navigation Pill Bar */}
             <div style={{
                 display: 'flex',
-                gap: '0.4rem',
+                gap: '0.5rem',
                 overflowX: 'auto',
-                paddingBottom: '0.5rem',
+                overflowY: 'hidden',
+                paddingBottom: '0.75rem',
                 marginBottom: '1.5rem',
-                borderBottom: '1px solid var(--border)'
+                borderBottom: '1px solid var(--border)',
+                scrollbarWidth: 'thin',
+                WebkitOverflowScrolling: 'touch'
             }}>
                 {navItems.map(item => {
                     const isPermitted = !item.perm || isSuperAdmin || hasPermission(user, item.perm);
@@ -147,24 +165,38 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
                             type="button"
                             onClick={() => setActiveTab(item.id)}
                             style={{
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '0.5rem',
-                                padding: '0.55rem 1rem',
+                                padding: '0.65rem 1.25rem',
                                 borderRadius: 'var(--radius-lg)',
                                 border: '1px solid',
-                                borderColor: isActive ? 'var(--primary)' : 'transparent',
+                                borderColor: isActive ? 'var(--primary)' : 'var(--border)',
                                 background: isActive ? 'var(--primary)' : 'var(--bg-card)',
                                 color: isActive ? '#fff' : 'var(--text-main)',
                                 fontSize: '0.8125rem',
                                 fontWeight: isActive ? 700 : 600,
                                 whiteSpace: 'nowrap',
                                 cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                                boxShadow: isActive ? '0 2px 8px rgba(22, 101, 52, 0.25)' : 'none'
+                                transition: 'all 0.2s ease',
+                                boxShadow: isActive ? '0 2px 8px rgba(22, 101, 52, 0.25)' : 'var(--shadow-sm)',
+                                flexShrink: 0
+                            }}
+                            onMouseEnter={(e) => {
+                                if (!isActive) {
+                                    e.currentTarget.style.background = 'var(--bg-hover)';
+                                    e.currentTarget.style.borderColor = 'var(--primary)';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (!isActive) {
+                                    e.currentTarget.style.background = 'var(--bg-card)';
+                                    e.currentTarget.style.borderColor = 'var(--border)';
+                                }
                             }}
                         >
-                            <IconComp size={15} color={isActive ? '#fff' : 'var(--text-muted)'} />
+                            <IconComp size={16} color={isActive ? '#fff' : 'var(--text-muted)'} strokeWidth={2.5} />
                             <span>{item.label}</span>
                         </button>
                     );

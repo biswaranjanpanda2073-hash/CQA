@@ -255,70 +255,82 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
 
             {/* Hub Navigation Tiles */}
             <div className="grid md-grid-3 gap-4">
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('projects')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'var(--primary-alpha)', color: 'var(--primary)' }}>
-                            <Layers size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('projects')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'var(--primary-alpha)', color: 'var(--primary)', flexShrink: 0 }}>
+                            <Layers size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">Project Studio</h3>
-                    <p className="text-xs text-muted">Create projects, configure stations, serial rules, and workflows.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>Project Studio</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Create projects, configure stations, serial rules, and workflows.</p>
+                    </div>
                 </div>
 
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('stations')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(8, 145, 178, 0.12)', color: '#0891b2' }}>
-                            <Cpu size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('stations')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'rgba(8, 145, 178, 0.12)', color: '#0891b2', flexShrink: 0 }}>
+                            <Cpu size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">Station Master</h3>
-                    <p className="text-xs text-muted">Global physical and logical station definitions and terminal types.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>Station Master</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Global physical and logical station definitions and terminal types.</p>
+                    </div>
                 </div>
 
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('rbac')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(124, 58, 237, 0.12)', color: '#7c3aed' }}>
-                            <Shield size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('rbac')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'rgba(124, 58, 237, 0.12)', color: '#7c3aed', flexShrink: 0 }}>
+                            <Shield size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">RBAC & Governance</h3>
-                    <p className="text-xs text-muted">Manage user roles, granular permission matrices, and reset tickets.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>RBAC & Governance</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Manage user roles, granular permission matrices, and reset tickets.</p>
+                    </div>
                 </div>
 
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('unit-config')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(217, 119, 6, 0.12)', color: '#d97706' }}>
-                            <GitBranch size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('unit-config')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'rgba(217, 119, 6, 0.12)', color: '#d97706', flexShrink: 0 }}>
+                            <GitBranch size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">Serial & Device Governance</h3>
-                    <p className="text-xs text-muted">Controlled administrative movement wizard, hold/unhold, and history reversal.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>Serial & Device Governance</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Controlled administrative movement wizard, hold/unhold, and history reversal.</p>
+                    </div>
                 </div>
 
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('audit')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(22, 163, 74, 0.12)', color: '#16a34a' }}>
-                            <History size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('audit')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'rgba(22, 163, 74, 0.12)', color: '#16a34a', flexShrink: 0 }}>
+                            <History size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">Compliance & Audit Trail</h3>
-                    <p className="text-xs text-muted">Immutable ledger of all administrative overrides, logins, and configurations.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>Compliance & Audit Trail</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Immutable ledger of all administrative overrides, logins, and configurations.</p>
+                    </div>
                 </div>
 
-                <div className="card clickable hover-lift p-5" onClick={() => onNavigate('maintenance')}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div className="flex-center" style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(220, 38, 38, 0.12)', color: '#dc2626' }}>
-                            <Sliders size={22} />
+                <div className="card clickable hover-lift" onClick={() => onNavigate('maintenance')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'rgba(220, 38, 38, 0.12)', color: '#dc2626', flexShrink: 0 }}>
+                            <Sliders size={24} strokeWidth={2.5} />
                         </div>
-                        <ArrowRight size={16} color="var(--text-muted)" />
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
                     </div>
-                    <h3 className="font-extrabold text-base mb-1">Maintenance & Safeguards</h3>
-                    <p className="text-xs text-muted">Emergency maintenance locks, nomenclature display mappings, and purge safety.</p>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>Maintenance & Safeguards</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Emergency maintenance locks, nomenclature display mappings, and purge safety.</p>
+                    </div>
                 </div>
             </div>
 
