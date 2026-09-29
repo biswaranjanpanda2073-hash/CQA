@@ -464,7 +464,7 @@ export const BaanMasterStudio = ({ user }) => {
             {activeTab === 'parts' && (
                 <div>
                     {/* Filter & Control Bar */}
-                    <div className="card mb-4" style={{ padding: '1rem 1.25rem' }}>
+                    <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '18px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                             <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
                                 <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -520,9 +520,10 @@ export const BaanMasterStudio = ({ user }) => {
                         </div>
                     ) : (
                         <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-                            gap: '1.25rem'
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '18px',
+                            width: '100%'
                         }}>
                             {filteredParts.map(part => {
                                 const pn = part.partNumber || part.id;
@@ -534,95 +535,131 @@ export const BaanMasterStudio = ({ user }) => {
                                 return (
                                     <div
                                         key={pn}
-                                        className="card"
                                         style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             opacity: isArchived ? 0.75 : 1,
-                                            border: isLowStock ? '1px solid var(--warning)' : '1px solid var(--border)'
+                                            border: isLowStock ? '1px solid var(--warning)' : '1px solid var(--border)',
+                                            borderRadius: 'var(--radius-lg)',
+                                            background: 'var(--bg-card)',
+                                            boxShadow: 'var(--shadow-sm)',
+                                            width: '100%',
+                                            overflow: 'hidden',
+                                            transition: 'box-shadow 0.2s ease, border-color 0.2s ease'
                                         }}
                                     >
-                                        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                                                    <span style={{
-                                                        background: 'var(--bg-main)',
-                                                        border: '1px solid var(--border)',
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        padding: '2px 6px',
-                                                        fontSize: '11px',
-                                                        fontFamily: 'monospace',
-                                                        fontWeight: 700,
-                                                        color: 'var(--primary)'
-                                                    }}>
-                                                        {pn}
-                                                    </span>
-                                                    <span className="status-pill info" style={{ fontSize: '10px' }}>
-                                                        {part.category || 'General'}
-                                                    </span>
-                                                </div>
-                                                <h3 className="font-extrabold text-base" style={{ margin: 0 }}>
-                                                    {part.name}
-                                                </h3>
+                                        {/* Row 1: Code + Category + Name + Unit Cost + Stock Health + Status */}
+                                        <div style={{
+                                            padding: '0.75rem 1.25rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.65rem',
+                                            flexWrap: 'wrap',
+                                            borderBottom: '1px solid var(--border-light)'
+                                        }}>
+                                            <span style={{
+                                                background: 'var(--bg-main)',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 6px',
+                                                fontSize: '11px',
+                                                fontFamily: 'monospace',
+                                                fontWeight: 700,
+                                                color: 'var(--primary)',
+                                                flexShrink: 0
+                                            }}>
+                                                {pn}
+                                            </span>
+                                            <span className="status-pill info" style={{ fontSize: '10px', flexShrink: 0 }}>
+                                                {part.category || 'General'}
+                                            </span>
+                                            <span className="font-extrabold text-base" style={{ color: 'var(--text-main)', letterSpacing: '-0.01em', minWidth: 120 }}>
+                                                {part.name}
+                                            </span>
+
+                                            <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 0.15rem', flexShrink: 0 }} />
+
+                                            {/* Unit Cost Chip */}
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.35rem',
+                                                background: 'var(--bg-main)',
+                                                border: '1px solid var(--border-light)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 8px',
+                                                fontSize: '0.7rem',
+                                                flexShrink: 0
+                                            }}>
+                                                <span className="text-muted font-bold">Unit Cost:</span>
+                                                <span className="font-extrabold" style={{ color: 'var(--primary)' }}>
+                                                    ₹{Number(part.unitCost || 0).toLocaleString()}
+                                                </span>
                                             </div>
 
-                                            <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px' }}>
-                                                {part.status || 'Active'}
-                                            </span>
+                                            {/* Stock Health Chip */}
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.35rem',
+                                                background: 'var(--bg-main)',
+                                                border: '1px solid var(--border-light)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 8px',
+                                                fontSize: '0.7rem',
+                                                flexShrink: 0
+                                            }}>
+                                                <span className="text-muted font-bold">Stock:</span>
+                                                <span className={`font-bold ${isLowStock ? 'text-warning' : 'text-success'}`}>
+                                                    {currentStock} units
+                                                </span>
+                                                <span className="text-muted text-xs">
+                                                    (min: {minStock})
+                                                </span>
+                                            </div>
+
+                                            {/* Right-aligned tags */}
+                                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                                                {isLowStock && (
+                                                    <span className="status-pill warning" style={{ fontSize: '9px', padding: '2px 7px', fontWeight: 700 }}>
+                                                        Low Stock Alert
+                                                    </span>
+                                                )}
+                                                <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px', padding: '2px 8px', fontWeight: 700 }}>
+                                                    {part.status || 'Active'}
+                                                </span>
+                                            </div>
                                         </div>
 
-                                        <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                            <p className="text-muted text-xs" style={{ margin: 0, minHeight: '2.4em', lineHeight: 1.5 }}>
+                                        {/* Row 2: Description + Actions */}
+                                        <div style={{
+                                            padding: '0.55rem 1.25rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: '1rem',
+                                            background: 'var(--bg-main)'
+                                        }}>
+                                            <p className="text-muted text-xs" style={{
+                                                margin: 0,
+                                                lineHeight: 1.5,
+                                                flex: 1,
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }} title={part.description}>
                                                 {part.description || 'Standard manufacturing/rework replacement component.'}
                                             </p>
 
-                                            <div style={{
-                                                background: 'var(--bg-main)',
-                                                borderRadius: 'var(--radius-md)',
-                                                padding: '0.65rem 0.75rem',
-                                                fontSize: '0.75rem',
-                                                display: 'grid',
-                                                gridTemplateColumns: '1fr 1fr',
-                                                gap: '0.5rem'
-                                            }}>
-                                                <div>
-                                                    <span className="text-muted font-bold block" style={{ fontSize: '10px' }}>UNIT COST</span>
-                                                    <span className="font-extrabold text-sm" style={{ color: 'var(--primary)' }}>
-                                                        ₹{Number(part.unitCost || 0).toLocaleString()}
-                                                    </span>
-                                                </div>
-
-                                                <div>
-                                                    <span className="text-muted font-bold block" style={{ fontSize: '10px' }}>STOCK HEALTH</span>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                                        <span className={`font-bold ${isLowStock ? 'text-warning' : 'text-success'}`}>
-                                                            {currentStock} units
-                                                        </span>
-                                                        <span className="text-muted text-xs">
-                                                            (min: {minStock})
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div style={{
-                                            padding: '0.75rem 1rem',
-                                            borderTop: '1px solid var(--border)',
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            background: 'var(--bg-main)'
-                                        }}>
-                                            <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
                                                 {canEditPart && (
                                                     <button
                                                         className="btn-ghost"
                                                         title="Edit Part Master"
                                                         onClick={() => handleOpenEditPart(part)}
-                                                        style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                                                        style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
                                                     >
-                                                        <Edit3 size={15} />
+                                                        <Edit3 size={14} />
                                                     </button>
                                                 )}
 
@@ -631,18 +668,12 @@ export const BaanMasterStudio = ({ user }) => {
                                                         className="btn-ghost"
                                                         title="Archive Part"
                                                         onClick={() => handleOpenArchivePart(part)}
-                                                        style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
+                                                        style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
                                                     >
-                                                        <Archive size={15} />
+                                                        <Archive size={14} />
                                                     </button>
                                                 )}
                                             </div>
-
-                                            {isLowStock && (
-                                                <span className="status-pill warning" style={{ fontSize: '9px', fontWeight: 700 }}>
-                                                    Low Stock Alert
-                                                </span>
-                                            )}
                                         </div>
                                     </div>
                                 );
@@ -658,7 +689,7 @@ export const BaanMasterStudio = ({ user }) => {
             {activeTab === 'locations' && (
                 <div>
                     {/* Location Filters Bar */}
-                    <div className="card mb-4" style={{ padding: '1rem 1.25rem' }}>
+                    <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '18px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                             <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
                                 <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -716,9 +747,10 @@ export const BaanMasterStudio = ({ user }) => {
                         </div>
                     ) : (
                         <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                            gap: '1.25rem'
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '18px',
+                            width: '100%'
                         }}>
                             {filteredLocations.map(locObj => {
                                 const isArchived = locObj.status === 'Archived';
@@ -726,90 +758,117 @@ export const BaanMasterStudio = ({ user }) => {
                                 return (
                                     <div
                                         key={locObj.id}
-                                        className="card"
                                         style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             opacity: isArchived ? 0.75 : 1,
-                                            border: '1px solid var(--border)'
+                                            border: '1px solid var(--border)',
+                                            borderRadius: 'var(--radius-lg)',
+                                            background: 'var(--bg-card)',
+                                            boxShadow: 'var(--shadow-sm)',
+                                            width: '100%',
+                                            overflow: 'hidden',
+                                            transition: 'box-shadow 0.2s ease, border-color 0.2s ease'
                                         }}
                                     >
-                                        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                                                    <span style={{
-                                                        background: 'var(--bg-main)',
-                                                        border: '1px solid var(--border)',
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        padding: '2px 6px',
-                                                        fontSize: '11px',
-                                                        fontFamily: 'monospace',
-                                                        fontWeight: 700,
-                                                        color: '#ea580c'
-                                                    }}>
-                                                        {locObj.id}
-                                                    </span>
-                                                    <span className="status-pill default" style={{ fontSize: '10px' }}>
-                                                        {locObj.type || 'WAREHOUSE'}
-                                                    </span>
-                                                </div>
-                                                <h3 className="font-extrabold text-base" style={{ margin: 0 }}>
-                                                    {locObj.name}
-                                                </h3>
-                                            </div>
-
-                                            <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px' }}>
-                                                {locObj.status || 'Active'}
-                                            </span>
-                                        </div>
-
-                                        <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                            <p className="text-muted text-xs" style={{ margin: 0, minHeight: '2em', lineHeight: 1.5 }}>
-                                                {locObj.description || 'Inventory storage and batch staging location.'}
-                                            </p>
-
-                                            <div style={{
+                                        {/* Row 1: ID + Type + Name + Capacity + Status */}
+                                        <div style={{
+                                            padding: '0.75rem 1.25rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.65rem',
+                                            flexWrap: 'wrap',
+                                            borderBottom: '1px solid var(--border-light)'
+                                        }}>
+                                            <span style={{
                                                 background: 'var(--bg-main)',
-                                                borderRadius: 'var(--radius-md)',
-                                                padding: '0.5rem 0.75rem',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 6px',
+                                                fontSize: '11px',
+                                                fontFamily: 'monospace',
+                                                fontWeight: 700,
+                                                color: '#ea580c',
+                                                flexShrink: 0
+                                            }}>
+                                                {locObj.id}
+                                            </span>
+                                            <span className="status-pill default" style={{ fontSize: '10px', flexShrink: 0 }}>
+                                                {locObj.type || 'WAREHOUSE'}
+                                            </span>
+                                            <span className="font-extrabold text-base" style={{ color: 'var(--text-main)', letterSpacing: '-0.01em', minWidth: 120 }}>
+                                                {locObj.name}
+                                            </span>
+
+                                            <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 0.15rem', flexShrink: 0 }} />
+
+                                            {/* Capacity Chip */}
+                                            <div style={{
                                                 display: 'flex',
-                                                justifyContent: 'space-between',
-                                                fontSize: '0.75rem'
+                                                alignItems: 'center',
+                                                gap: '0.35rem',
+                                                background: 'var(--bg-main)',
+                                                border: '1px solid var(--border-light)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 8px',
+                                                fontSize: '0.7rem',
+                                                flexShrink: 0
                                             }}>
                                                 <span className="text-muted font-bold">Capacity:</span>
                                                 <span className="font-bold">{locObj.capacity || 1000} units max</span>
                                             </div>
+
+                                            {/* Right-aligned status */}
+                                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                                                <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px', padding: '2px 8px', fontWeight: 700 }}>
+                                                    {locObj.status || 'Active'}
+                                                </span>
+                                            </div>
                                         </div>
 
+                                        {/* Row 2: Description + Actions */}
                                         <div style={{
-                                            padding: '0.75rem 1rem',
-                                            borderTop: '1px solid var(--border)',
+                                            padding: '0.55rem 1.25rem',
                                             display: 'flex',
-                                            justifyContent: 'flex-end',
-                                            gap: '0.25rem',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: '1rem',
                                             background: 'var(--bg-main)'
                                         }}>
-                                            {canEditLoc && (
-                                                <button
-                                                    className="btn-ghost"
-                                                    title="Edit Location"
-                                                    onClick={() => handleOpenEditLoc(locObj)}
-                                                    style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
-                                                >
-                                                    <Edit3 size={15} />
-                                                </button>
-                                            )}
+                                            <p className="text-muted text-xs" style={{
+                                                margin: 0,
+                                                lineHeight: 1.5,
+                                                flex: 1,
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis'
+                                            }} title={locObj.description}>
+                                                {locObj.description || 'Inventory storage and batch staging location.'}
+                                            </p>
 
-                                            {canArchiveLoc && !isArchived && (
-                                                <button
-                                                    className="btn-ghost"
-                                                    title="Archive Location"
-                                                    onClick={() => handleOpenArchiveLoc(locObj)}
-                                                    style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
-                                                >
-                                                    <Archive size={15} />
-                                                </button>
-                                            )}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
+                                                {canEditLoc && (
+                                                    <button
+                                                        className="btn-ghost"
+                                                        title="Edit Location"
+                                                        onClick={() => handleOpenEditLoc(locObj)}
+                                                        style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
+                                                    >
+                                                        <Edit3 size={14} />
+                                                    </button>
+                                                )}
+
+                                                {canArchiveLoc && !isArchived && (
+                                                    <button
+                                                        className="btn-ghost"
+                                                        title="Archive Location"
+                                                        onClick={() => handleOpenArchiveLoc(locObj)}
+                                                        style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
+                                                    >
+                                                        <Archive size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -906,7 +965,7 @@ export const BaanMasterStudio = ({ user }) => {
             {editingPart && (
                 <div className="modal-overlay" onClick={() => setEditingPart(null)}>
                     <div className="card modal-box animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <div className="modal-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <Package size={20} color="var(--primary)" />
                                 <h3 className="font-extrabold text-lg" style={{ margin: 0 }}>
@@ -919,7 +978,7 @@ export const BaanMasterStudio = ({ user }) => {
                         </div>
 
                         <form onSubmit={handleSavePart}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Part Number (PN) *</label>
                                     <input
@@ -951,7 +1010,7 @@ export const BaanMasterStudio = ({ user }) => {
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '0.75rem' }}>
+                            <div style={{ marginBottom: '1rem' }}>
                                 <label className="form-label text-xs font-bold">Part Display Name *</label>
                                 <input
                                     type="text"
@@ -963,7 +1022,7 @@ export const BaanMasterStudio = ({ user }) => {
                                 />
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Standard Unit Cost (₹) *</label>
                                     <input
@@ -989,7 +1048,7 @@ export const BaanMasterStudio = ({ user }) => {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Preferred Supplier</label>
                                     <input
@@ -1013,7 +1072,7 @@ export const BaanMasterStudio = ({ user }) => {
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ marginBottom: 0 }}>
                                 <label className="form-label text-xs font-bold">Description / Technical Notes</label>
                                 <textarea
                                     className="form-control"
@@ -1024,7 +1083,7 @@ export const BaanMasterStudio = ({ user }) => {
                                 />
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                            <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={() => setEditingPart(null)}>
                                     Cancel
                                 </button>
