@@ -485,7 +485,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
             {subTab === 'directory' && (
                 <div>
                     {/* Controls & Filter Bar */}
-                    <div className="card mb-4" style={{ padding: '1rem 1.25rem' }}>
+                    <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '18px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                             <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
                                 <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -553,9 +553,10 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                         </div>
                     ) : (
                         <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-                            gap: '1.25rem'
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '18px',
+                            width: '100%'
                         }}>
                             {filteredStations.map(st => {
                                 const isArchived = st.status === 'Archived';
@@ -563,107 +564,96 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                                 return (
                                     <div
                                         key={st.id}
-                                        className="card"
                                         style={{
                                             display: 'flex',
                                             flexDirection: 'column',
                                             opacity: isArchived ? 0.75 : 1,
-                                            border: '1px solid var(--border)'
+                                            border: '1px solid var(--border)',
+                                            borderRadius: 'var(--radius-lg)',
+                                            background: 'var(--bg-card)',
+                                            boxShadow: 'var(--shadow-sm)',
+                                            width: '100%',
+                                            overflow: 'hidden',
+                                            transition: 'box-shadow 0.2s ease, border-color 0.2s ease'
                                         }}
                                     >
-                                        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                                                    <span style={{
-                                                        background: 'var(--bg-main)',
-                                                        border: '1px solid var(--border)',
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        padding: '2px 6px',
-                                                        fontSize: '11px',
-                                                        fontFamily: 'monospace',
-                                                        fontWeight: 700,
-                                                        color: '#0891b2'
-                                                    }}>
-                                                        {st.code || 'STN'}
-                                                    </span>
-                                                    <span className="status-pill" style={{ fontSize: '10px', background: 'rgba(8, 145, 178, 0.12)', color: '#0891b2' }}>
-                                                        {st.projectId}
-                                                    </span>
-                                                    <span className="status-pill default" style={{ fontSize: '10px' }}>
-                                                        Seq: {st.sequence || 1}
-                                                    </span>
-                                                </div>
-                                                <h3 className="font-extrabold text-base" style={{ margin: 0 }}>
-                                                    {st.name}
-                                                </h3>
-                                            </div>
-
-                                            <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px' }}>
-                                                {st.status || 'Active'}
-                                            </span>
-                                        </div>
-
-                                        <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                            <p className="text-muted text-xs" style={{ margin: 0, minHeight: '2.4em', lineHeight: 1.5 }}>
-                                                {st.description || 'No description provided.'}
-                                            </p>
-
-                                            <div style={{
+                                        {/* Row 1: All info inline — Tags + Name + Role + Status */}
+                                        <div style={{
+                                            padding: '0.85rem 1.25rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.65rem',
+                                            flexWrap: 'wrap',
+                                            borderBottom: '1px solid var(--border-light)'
+                                        }}>
+                                            <span style={{
                                                 background: 'var(--bg-main)',
-                                                borderRadius: 'var(--radius-md)',
-                                                padding: '0.5rem 0.75rem',
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                fontSize: '0.75rem'
+                                                border: '1px solid var(--border)',
+                                                borderRadius: 'var(--radius-sm)',
+                                                padding: '2px 6px',
+                                                fontSize: '11px',
+                                                fontFamily: 'monospace',
+                                                fontWeight: 700,
+                                                color: '#0891b2',
+                                                flexShrink: 0
                                             }}>
-                                                <span className="text-muted font-bold">Terminal Role:</span>
+                                                {st.code || 'STN'}
+                                            </span>
+                                            <span className="status-pill" style={{ fontSize: '10px', background: 'rgba(8, 145, 178, 0.12)', color: '#0891b2', flexShrink: 0 }}>
+                                                {st.projectId}
+                                            </span>
+                                            <span className="status-pill default" style={{ fontSize: '10px', flexShrink: 0 }}>
+                                                SEQ: {st.sequence || 1}
+                                            </span>
+                                            <span className="font-extrabold text-base" style={{ flex: 1, minWidth: 100 }}>
+                                                {st.name}
+                                            </span>
+                                            <div style={{
+                                                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                                background: 'var(--bg-main)', border: '1px solid var(--border-light)',
+                                                borderRadius: 'var(--radius-sm)', padding: '3px 10px',
+                                                fontSize: '0.7rem', flexShrink: 0
+                                            }}>
+                                                <span className="text-muted font-bold">Role:</span>
                                                 <span className="font-bold font-mono" style={{ color: 'var(--text-main)' }}>
                                                     {st.terminalType || 'INSPECTION'}
                                                 </span>
                                             </div>
+                                            <span className={`status-pill ${isArchived ? 'default' : 'success'}`} style={{ fontSize: '10px', flexShrink: 0 }}>
+                                                {st.status || 'Active'}
+                                            </span>
                                         </div>
 
+
+                                        {/* Row 2: Description + Actions */}
                                         <div style={{
-                                            padding: '0.75rem 1rem',
-                                            borderTop: '1px solid var(--border)',
+                                            padding: '0.55rem 1.25rem',
                                             display: 'flex',
-                                            justifyContent: 'space-between',
                                             alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: '1rem',
                                             background: 'var(--bg-main)'
                                         }}>
-                                            <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                            <p className="text-muted text-xs" style={{ margin: 0, lineHeight: 1.5, flex: 1 }}>
+                                                {st.description || 'No description provided.'}
+                                            </p>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.1rem', flexShrink: 0 }}>
                                                 {canEditStation && (
-                                                    <button
-                                                        className="btn-ghost"
-                                                        title="Edit Station Definition"
-                                                        onClick={() => handleOpenEditStation(st)}
-                                                        style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
-                                                    >
-                                                        <Edit3 size={15} />
+                                                    <button className="btn-ghost" title="Edit Station Definition" onClick={() => handleOpenEditStation(st)} style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}>
+                                                        <Edit3 size={13} />
                                                     </button>
                                                 )}
-
                                                 {canArchiveStation && !isArchived && (
-                                                    <button
-                                                        className="btn-ghost"
-                                                        title="Archive Station"
-                                                        onClick={() => handleOpenArchiveStation(st)}
-                                                        style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
-                                                    >
-                                                        <Archive size={15} />
+                                                    <button className="btn-ghost" title="Archive Station" onClick={() => handleOpenArchiveStation(st)} style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}>
+                                                        <Archive size={13} />
                                                     </button>
                                                 )}
+                                                <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 0.2rem' }} />
+                                                <button className="btn-ghost text-xs font-bold" onClick={() => handleManageStationCheckpoints(st)} style={{ color: '#0891b2', padding: '0.25rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                    <CheckSquare size={12} />
+                                                    Checkpoints →
+                                                </button>
                                             </div>
-
-                                            <button
-                                                className="btn-ghost text-xs font-bold"
-                                                onClick={() => handleManageStationCheckpoints(st)}
-                                                style={{ color: '#0891b2', padding: '0.35rem 0.5rem' }}
-                                            >
-                                                <CheckSquare size={13} style={{ marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                                                Checkpoints &rarr;
-                                            </button>
                                         </div>
                                     </div>
                                 );
@@ -1008,7 +998,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
             {editingStation && (
                 <div className="modal-overlay" onClick={() => setEditingStation(null)}>
                     <div className="card modal-box animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <div className="modal-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <Cpu size={20} color="#0891b2" />
                                 <h3 className="font-extrabold text-lg" style={{ margin: 0 }}>
@@ -1021,7 +1011,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                         </div>
 
                         <form onSubmit={handleSaveStation}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Station Name *</label>
                                     <input
@@ -1047,7 +1037,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Project Association *</label>
                                     <select
@@ -1078,7 +1068,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Sequence Order *</label>
                                     <input
@@ -1105,7 +1095,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ marginBottom: 0 }}>
                                 <label className="form-label text-xs font-bold">Description</label>
                                 <textarea
                                     className="form-control"
@@ -1116,7 +1106,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                                 />
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                            <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={() => setEditingStation(null)}>
                                     Cancel
                                 </button>

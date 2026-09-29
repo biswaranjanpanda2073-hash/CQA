@@ -1402,6 +1402,63 @@ tbody tr:last-child td {
   }
 }
 
+/* ============ MODAL BOX — Unified Edit/Create Modal Shell ============ */
+.modal-box {
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border-light);
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem 2rem 1.75rem 2rem;
+  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+/* Modal header: Icon + Title + Close button row */
+.modal-box .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Modal footer: Cancel + Save row */
+.modal-box .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  margin-top: 1.75rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+/* Form rows inside modal */
+.modal-box .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modal-box .form-row.full {
+  grid-template-columns: 1fr;
+}
+
+.modal-box .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.modal-box .form-group:last-child {
+  margin-bottom: 0;
+}
+
 /* ============ EMPTY STATE ============ */
 .empty-state {
   display: flex;
@@ -2637,4 +2694,126 @@ tbody tr:last-child td {
     display: none !important;
   }
 }
+
+/* ============ PROJECT STUDIO SINGLE-COLUMN LAYOUT ============ */
+.project-studio-single-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.project-card-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.project-card-row:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
+  border-color: var(--primary-alpha-strong);
+  transform: translateY(-1px);
+}
+
+.project-card-header {
+  padding: 1.25rem 1.5rem 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.project-card-body {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.project-card-stats-box {
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0.875rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.project-card-footer {
+  padding: 0.85rem 1.5rem;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-main);
+}
+
+.project-code-badge {
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.03em;
+}
+
+.project-card-action-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.project-card-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--primary);
+  border-color: var(--border);
+}
+
+.project-card-action-btn.danger:hover {
+  background: var(--error-bg);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+@media (max-width: 900px) {
+  .project-card-stats-box {
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .project-card-header {
+    padding: 1rem 1.1rem;
+  }
+  .project-card-body {
+    padding: 1rem 1.1rem;
+  }
+  .project-card-footer {
+    padding: 0.75rem 1.1rem;
+  }
+}
+
+
 

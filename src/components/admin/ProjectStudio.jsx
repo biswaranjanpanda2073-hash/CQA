@@ -18,6 +18,19 @@ import { hasPermission, PERMISSIONS } from '../../utils/rbacEngine.js';
 import { logAdminAction, AUDIT_ACTIONS } from '../../utils/auditLogger.js';
 import { INITIAL_PROJECTS } from '../../utils/configBootstrap.js';
 
+const PROJECT_DISPLAY_ORDER = ['Device', 'Peripherals', 'Inward QC', 'Calculator'];
+
+const sortProjectsInOrder = (list) => {
+    return [...list].sort((a, b) => {
+        const idxA = PROJECT_DISPLAY_ORDER.indexOf(a.id);
+        const idxB = PROJECT_DISPLAY_ORDER.indexOf(b.id);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+    });
+};
+
 export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
     const isSuperAdmin = user?.role === 'Super Admin';
     const canCreate = isSuperAdmin || hasPermission(user, PERMISSIONS.PROJECT_CREATE);
@@ -101,9 +114,9 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
         return () => unsub();
     }, []);
 
-    // Filtered projects
+    // Filtered projects sorted in exact required sequence
     const filteredProjects = useMemo(() => {
-        return projects.filter(p => {
+        const filtered = projects.filter(p => {
             const matchesSearch = !searchTerm ||
                 p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 p.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -115,6 +128,8 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
 
             return matchesSearch && matchesStatus && matchesCategory;
         });
+
+        return sortProjectsInOrder(filtered);
     }, [projects, searchTerm, statusFilter, categoryFilter]);
 
     // Categories list
@@ -453,7 +468,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
     return (
         <div className="animate-fade-in" style={{ paddingBottom: '2rem' }}>
             {/* Header & Controls Bar */}
-            <div className="card mb-4" style={{ padding: '1.25rem' }}>
+            <div className="card" style={{ padding: '1.25rem', marginBottom: '18px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
@@ -534,7 +549,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                 </div>
             </div>
 
-            {/* Project Grid */}
+            {/* Project Cards (Single-Column Vertical Layout: 1 card per row) */}
             {loading ? (
                 <div className="card p-8 text-center">
                     <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 1rem', color: 'var(--primary)' }} />
@@ -547,11 +562,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                     <p className="text-muted text-xs">Try adjusting your search or category filters</p>
                 </div>
             ) : (
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '1.25rem'
-                }}>
+                <div className="project-studio-single-column" style={{ display: 'flex', flexDirection: 'column', gap: '18px', width: '100%' }}>
                     {filteredProjects.map(proj => {
                         const isArchived = proj.status === 'Archived';
                         const isDraft = proj.status === 'Draft';
@@ -566,131 +577,165 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                         return (
                             <div
                                 key={proj.id}
-                                className="card"
+                                className="project-card-row"
                                 style={{
                                     display: 'flex',
                                     flexDirection: 'column',
                                     opacity: isArchived ? 0.75 : 1,
                                     border: isDraft ? '1px dashed var(--warning)' : '1px solid var(--border)',
-                                    transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                                    borderRadius: 'var(--radius-lg)',
+                                    background: 'var(--bg-card)',
+                                    boxShadow: 'var(--shadow-sm)',
+                                    width: '100%',
+                                    overflow: 'hidden',
+                                    transition: 'box-shadow 0.2s ease, border-color 0.2s ease'
                                 }}
                             >
-                                {/* Card Header */}
-                                <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                                            <span style={{
-                                                background: 'var(--bg-main)',
-                                                border: '1px solid var(--border)',
-                                                borderRadius: 'var(--radius-sm)',
-                                                padding: '2px 6px',
-                                                fontSize: '11px',
-                                                fontFamily: 'monospace',
-                                                fontWeight: 700,
-                                                color: 'var(--primary)'
-                                            }}>
-                                                {proj.code || proj.id.slice(0, 4).toUpperCase()}
-                                            </span>
-                                            <span className="status-pill" style={{
-                                                fontSize: '10px',
-                                                background: proj.category === 'Calculator' ? 'rgba(124, 58, 237, 0.12)' : 'rgba(2, 132, 199, 0.12)',
-                                                color: proj.category === 'Calculator' ? '#7c3aed' : '#0284c7'
-                                            }}>
-                                                {proj.category || 'Device'}
-                                            </span>
-                                        </div>
-                                        <h3 className="font-extrabold text-base" style={{ margin: 0 }}>
-                                            {proj.name}
-                                        </h3>
-                                        <span className="text-muted text-xs" style={{ fontFamily: 'monospace' }}>
-                                            ID: {proj.id}
+                                {/* Row 1: Code + Category + Name + ID + Inline Specs + Policy + Status */}
+                                <div style={{
+                                    padding: '0.75rem 1.25rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.65rem',
+                                    flexWrap: 'wrap',
+                                    borderBottom: '1px solid var(--border-light)'
+                                }}>
+                                    <span className="project-code-badge" style={{ flexShrink: 0 }}>
+                                        {proj.code || proj.id.slice(0, 4).toUpperCase()}
+                                    </span>
+                                    <span className="status-pill" style={{
+                                        fontSize: '10px',
+                                        padding: '2px 8px',
+                                        background: proj.category === 'Calculator' ? 'rgba(124, 58, 237, 0.12)' : 'rgba(2, 132, 199, 0.12)',
+                                        color: proj.category === 'Calculator' ? '#7c3aed' : '#0284c7',
+                                        flexShrink: 0
+                                    }}>
+                                        {proj.category || 'Device'}
+                                    </span>
+                                    <span className="font-extrabold text-base" style={{ color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                                        {proj.name}
+                                    </span>
+                                    <span className="text-muted" style={{ fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>
+                                        ID: {proj.id}
+                                    </span>
+
+                                    <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 0.15rem', flexShrink: 0 }} />
+
+                                    {/* Inline Quick Specs */}
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        background: 'var(--bg-main)',
+                                        border: '1px solid var(--border-light)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '2px 8px',
+                                        fontSize: '0.7rem',
+                                        flexShrink: 0
+                                    }}>
+                                        <span className="text-muted font-bold">Models:</span>
+                                        <span className="font-bold" style={{ color: 'var(--text-main)' }}>{modelsCount}</span>
+                                    </div>
+
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        background: 'var(--bg-main)',
+                                        border: '1px solid var(--border-light)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '2px 8px',
+                                        fontSize: '0.7rem',
+                                        flexShrink: 0
+                                    }}>
+                                        <span className="text-muted font-bold">Revisions:</span>
+                                        <span className="font-bold" style={{ color: 'var(--text-main)' }}>{hwCount} HW &bull; {swCount} SW</span>
+                                    </div>
+
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        background: 'var(--bg-main)',
+                                        border: '1px solid var(--border-light)',
+                                        borderRadius: 'var(--radius-sm)',
+                                        padding: '2px 8px',
+                                        fontSize: '0.7rem',
+                                        flexShrink: 0,
+                                        maxWidth: '220px'
+                                    }} title={proj.serialRules?.regex}>
+                                        <span className="text-muted font-bold">Regex:</span>
+                                        <span className="font-mono font-semibold truncate" style={{ color: 'var(--text-secondary)' }}>
+                                            {proj.serialRules?.regex || 'Standard'}
                                         </span>
                                     </div>
 
-                                    <div>
-                                        <span className={`status-pill ${isArchived ? 'default' : isDraft ? 'warning' : 'success'}`} style={{ fontSize: '10px' }}>
+                                    {/* Right-aligned tags */}
+                                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                                        {hasSubScans && (
+                                            <span className="status-pill info" style={{ fontSize: '9px', padding: '2px 7px' }}>
+                                                Sub-Assemblies
+                                            </span>
+                                        )}
+                                        <span className="status-pill default" style={{ fontSize: '9px', padding: '2px 7px' }}>
+                                            Policy: {proj.serialRules?.duplicatePolicy || 'LOOPER'}
+                                        </span>
+                                        <span className={`status-pill ${isArchived ? 'default' : isDraft ? 'warning' : 'success'}`} style={{
+                                            fontSize: '10px',
+                                            padding: '2px 8px',
+                                            fontWeight: 700
+                                        }}>
                                             {proj.status || 'Active'}
                                         </span>
                                     </div>
                                 </div>
 
-                                {/* Card Body */}
-                                <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                                    <p className="text-muted text-xs" style={{ margin: 0, minHeight: '2.4em', lineHeight: 1.5 }}>
+                                {/* Row 2: Description + Actions */}
+                                <div style={{
+                                    padding: '0.55rem 1.25rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '1rem',
+                                    background: 'var(--bg-main)'
+                                }}>
+                                    <p className="text-muted text-xs" style={{
+                                        margin: 0,
+                                        lineHeight: 1.5,
+                                        flex: 1,
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis'
+                                    }} title={proj.description}>
                                         {proj.description || 'No description provided.'}
                                     </p>
 
-                                    {/* Specifications Summary */}
-                                    <div style={{
-                                        background: 'var(--bg-main)',
-                                        borderRadius: 'var(--radius-md)',
-                                        padding: '0.65rem 0.75rem',
-                                        fontSize: '0.75rem'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                                            <span className="text-muted font-bold">Supported Models:</span>
-                                            <span className="font-bold">{modelsCount} configured</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                                            <span className="text-muted font-bold">HW / SW Revisions:</span>
-                                            <span className="font-bold">{hwCount} HW &bull; {swCount} SW</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span className="text-muted font-bold">Serial Regex:</span>
-                                            <span className="font-mono text-xs truncate" style={{ maxWidth: 160 }} title={proj.serialRules?.regex}>
-                                                {proj.serialRules?.regex || 'Standard'}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Governance Badges */}
-                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                        {hasSubScans && (
-                                            <span className="status-pill info" style={{ fontSize: '9px' }}>
-                                                Sub-Assemblies Required
-                                            </span>
-                                        )}
-                                        <span className="status-pill default" style={{ fontSize: '9px' }}>
-                                            Policy: {proj.serialRules?.duplicatePolicy || 'LOOPER'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Card Footer Actions */}
-                                <div style={{
-                                    padding: '0.75rem 1rem',
-                                    borderTop: '1px solid var(--border)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    background: 'var(--bg-main)'
-                                }}>
-                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexShrink: 0 }}>
                                         {canEdit && (
                                             <>
                                                 <button
                                                     className="btn-ghost"
                                                     title="Edit Project Profile"
                                                     onClick={() => handleOpenEdit(proj)}
-                                                    style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                                                    style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
                                                 >
-                                                    <Edit3 size={15} />
+                                                    <Edit3 size={14} />
                                                 </button>
                                                 <button
                                                     className="btn-ghost"
                                                     title="Configure Models & Specifications"
                                                     onClick={() => handleOpenSpecs(proj)}
-                                                    style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                                                    style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
                                                 >
-                                                    <Sliders size={15} />
+                                                    <Sliders size={14} />
                                                 </button>
                                                 <button
                                                     className="btn-ghost"
                                                     title="Serial Validation Rules & Governance"
                                                     onClick={() => handleOpenSerialRules(proj)}
-                                                    style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                                                    style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
                                                 >
-                                                    <Terminal size={15} />
+                                                    <Terminal size={14} />
                                                 </button>
                                             </>
                                         )}
@@ -700,9 +745,9 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                                 className="btn-ghost"
                                                 title="Clone Project Configuration"
                                                 onClick={() => handleOpenClone(proj)}
-                                                style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }}
+                                                style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }}
                                             >
-                                                <Copy size={15} />
+                                                <Copy size={14} />
                                             </button>
                                         )}
 
@@ -711,22 +756,35 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                                 className="btn-ghost"
                                                 title="Archive Project"
                                                 onClick={() => handleOpenArchive(proj)}
-                                                style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
+                                                style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--error)' }}
                                             >
-                                                <Archive size={15} />
+                                                <Archive size={14} />
                                             </button>
                                         )}
-                                    </div>
 
-                                    {onNavigateToWorkflow && (
-                                        <button
-                                            className="btn-ghost text-xs font-bold"
-                                            onClick={() => onNavigateToWorkflow(proj.id)}
-                                            style={{ color: 'var(--primary)', padding: '0.35rem 0.5rem' }}
-                                        >
-                                            Workflow <ChevronRight size={14} />
-                                        </button>
-                                    )}
+                                        {onNavigateToWorkflow && (
+                                            <>
+                                                <div style={{ width: '1px', height: '14px', background: 'var(--border)', margin: '0 0.25rem' }} />
+                                                <button
+                                                    className="btn-ghost"
+                                                    onClick={() => onNavigateToWorkflow(proj.id)}
+                                                    style={{
+                                                        color: 'var(--primary)',
+                                                        padding: '0.25rem 0.6rem',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 700,
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.25rem',
+                                                        borderRadius: 'var(--radius-sm)'
+                                                    }}
+                                                >
+                                                    <span>Workflow</span>
+                                                    <ChevronRight size={13} />
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -738,7 +796,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             {editingProject && (
                 <div className="modal-overlay" onClick={() => setEditingProject(null)}>
                     <div className="card modal-box animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <div className="modal-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <Layers size={20} color="var(--primary)" />
                                 <h3 className="font-extrabold text-lg" style={{ margin: 0 }}>
@@ -751,7 +809,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                         </div>
 
                         <form onSubmit={handleSaveProject}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Project Display Name *</label>
                                     <input
@@ -778,7 +836,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                 </div>
                             </div>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div className="form-row">
                                 <div>
                                     <label className="form-label text-xs font-bold">Category *</label>
                                     <select
@@ -824,7 +882,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                 <span className="text-muted text-xs">Used as internal unique database key.</span>
                             </div>
 
-                            <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ marginBottom: 0 }}>
                                 <label className="form-label text-xs font-bold">Description</label>
                                 <textarea
                                     className="form-control"
@@ -835,7 +893,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                 />
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                            <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={() => setEditingProject(null)}>
                                     Cancel
                                 </button>

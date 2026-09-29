@@ -5,38 +5,54 @@ import App from './App.jsx'
 
 // ─── Service Worker Registration + Update Detection ───────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-
-      // ── Poll for updates every 60 seconds ──
-      setInterval(() => { reg.update(); }, 60_000);
-
-      // ── Listen for UPDATE_AVAILABLE message from SW activate ──
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type === 'UPDATE_AVAILABLE') {
-          showUpdateBanner();
+  if (import.meta.env.DEV) {
+    // In local development, unregister any service workers to ensure live HMR updates
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        registration.unregister();
+      }
+    });
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        for (const key of keys) {
+          caches.delete(key);
         }
       });
+    }
+  } else {
+    window.addEventListener('load', async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
 
-      // ── If a waiting SW exists already when page loads ──
-      if (reg.waiting) showUpdateBanner();
+        // ── Poll for updates every 60 seconds ──
+        setInterval(() => { reg.update(); }, 60_000);
 
-      // ── Detect when a new SW starts waiting ──
-      reg.addEventListener('updatefound', () => {
-        const incoming = reg.installing;
-        if (!incoming) return;
-        incoming.addEventListener('statechange', () => {
-          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+        // ── Listen for UPDATE_AVAILABLE message from SW activate ──
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data?.type === 'UPDATE_AVAILABLE') {
             showUpdateBanner();
           }
         });
-      });
 
-    } catch (err) {
-      console.warn('[SW] Registration failed:', err);
-    }
-  });
+        // ── If a waiting SW exists already when page loads ──
+        if (reg.waiting) showUpdateBanner();
+
+        // ── Detect when a new SW starts waiting ──
+        reg.addEventListener('updatefound', () => {
+          const incoming = reg.installing;
+          if (!incoming) return;
+          incoming.addEventListener('statechange', () => {
+            if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner();
+            }
+          });
+        });
+
+      } catch (err) {
+        console.warn('[SW] Registration failed:', err);
+      }
+    });
+  }
 }
 
 // ─── Update Banner UI ─────────────────────────────────────────
