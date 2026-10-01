@@ -31,8 +31,23 @@ const BaanBulkInward = () => {
                 'Minimum Stock Level': 20,
                 'MPN': 'LITH-500',
                 'Batch Number': 'B-202305-01',
-                'Location Selection': locations[0]?.name || 'Store A',
-                'Remarks': 'Sample entry'
+                'Location No/Name': 'Rack 1',
+                'Location Code': 'Code A',
+                'Remarks': 'Sample entry (Rack 1 - Code A)'
+            },
+            {
+                'Part Number': 'BAT-002',
+                'Part Name': 'Packaging Carton 500g',
+                'Quantity': 250,
+                'Per Unit Cost': 12.00,
+                'UOM': 'Nos',
+                'Invoice/DC Number': 'INV-998823',
+                'Minimum Stock Level': 50,
+                'MPN': 'BOX-CARTON',
+                'Batch Number': 'B-202305-02',
+                'Location No/Name': 'Rack 1',
+                'Location Code': 'Code B',
+                'Remarks': 'Same Rack 1, separate bin Code B'
             }
         ];
 
@@ -92,7 +107,28 @@ const BaanBulkInward = () => {
             const uom = String(row['UOM'] || '').trim();
             const invoice = String(row['Invoice/DC Number'] || '').trim();
             const minStock = Number(row['Minimum Stock Level']);
-            const location = String(row['Location Selection'] || row['Location'] || '').trim();
+            
+            // Extract Location No/Name and Location Code
+            const locationName = String(
+                row['Location No/Name'] || 
+                row['Location Name'] || 
+                row['Rack No/Name'] || 
+                row['Rack Name'] || 
+                row['Location Selection'] || 
+                row['Location'] || 
+                ''
+            ).trim();
+            const locationCode = String(
+                row['Location Code'] || 
+                row['Bin Code'] || 
+                row['Code'] || 
+                ''
+            ).trim();
+            
+            const location = locationName && locationCode 
+                ? `${locationName} — ${locationCode}` 
+                : (locationName || locationCode);
+                
             const batchNumber = String(row['Batch Number'] || '').trim();
 
             const errors = [];
@@ -106,7 +142,7 @@ const BaanBulkInward = () => {
             if (!VALID_UOMS.includes(uom)) errors.push(`Invalid UOM. Allowed: ${VALID_UOMS.join(', ')}.`);
             if (!invoice) errors.push('Invoice/DC Number is missing.');
             if (isNaN(minStock) || minStock < 0) errors.push('Minimum Stock Level must be >= 0.');
-            if (!location) errors.push('Location is missing.');
+            if (!locationName) errors.push('Location No/Name is missing.');
 
             // Multi-location vs Duplicate Check
             if (partNo && location) {
@@ -137,6 +173,8 @@ const BaanBulkInward = () => {
                 invoice,
                 minStock,
                 location,
+                locationName,
+                locationCode,
                 mpn: String(row['MPN'] || '').trim(),
                 batchNumber,
                 remarks: String(row['Remarks'] || '').trim(),
@@ -352,7 +390,7 @@ const BaanBulkInward = () => {
                                     <th>Part Name</th>
                                     <th className="num-col">Quantity</th>
                                     <th className="num-col">PPU (₹)</th>
-                                    <th>Location</th>
+                                    <th>Location (Rack & Code)</th>
                                     <th>Status</th>
                                     <th>Validation Notes</th>
                                 </tr>
@@ -372,7 +410,14 @@ const BaanBulkInward = () => {
                                         <td className="num-col font-bold">{row.qty} <span className="text-xs text-muted">{row.uom}</span></td>
                                         <td className="num-col">₹{row.cost.toFixed(2)}</td>
                                         <td>
-                                            <span className="baan-badge neutral">📍 {row.location}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <span className="baan-badge neutral font-bold">📍 {row.locationName || row.location}</span>
+                                                {row.locationCode && (
+                                                    <span className="text-xs" style={{ color: 'var(--baan-text-muted)', paddingLeft: '4px' }}>
+                                                        Code: <strong style={{ color: 'var(--baan-accent)' }}>{row.locationCode}</strong>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td>
                                             {row.status === 'Error' && (

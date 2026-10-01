@@ -1135,6 +1135,8 @@ const BaanManualInward = () => {
     const [formData, setFormData] = useState({
         partNumber: '',
         partName: '',
+        locationName: '',
+        locationCode: '',
         location: '',
         batchId: '',
         quantity: '',
@@ -1146,10 +1148,55 @@ const BaanManualInward = () => {
         invoiceOrDcNumber: '',
         minimumStockLevel: ''
     });
+    const [isCustomRack, setIsCustomRack] = useState(false);
+    const [isCustomCode, setIsCustomCode] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [statusBanner, setStatusBanner] = useState(null);
 
     const locations = Object.values(store.baan?.locations || {}).filter(l => l.status !== 'Archived' && l.status !== 'Inactive');
+
+    // Extract unique rack names
+    const existingRacks = useMemo(() => {
+        const set = new Set();
+        locations.forEach(loc => {
+            if (loc.name) set.add(loc.name.trim());
+        });
+        return Array.from(set).sort();
+    }, [locations]);
+
+    // Extract existing codes for selected rack
+    const existingCodes = useMemo(() => {
+        if (!formData.locationName) return [];
+        const set = new Set();
+        locations
+            .filter(loc => loc.name && loc.name.trim().toLowerCase() === formData.locationName.trim().toLowerCase())
+            .forEach(loc => {
+                if (loc.code && loc.code !== 'Default') set.add(loc.code.trim());
+            });
+        return Array.from(set).sort();
+    }, [locations, formData.locationName]);
+
+    // Resolved full location
+    const resolvedLocation = useMemo(() => {
+        const rack = (formData.locationName || '').trim();
+        const code = (formData.locationCode || '').trim();
+        if (rack && code) return `${rack} — ${code}`;
+        return rack || code || '';
+    }, [formData.locationName, formData.locationCode]);
+
+    // Live bin occupancy indicator
+    const binOccupancy = useMemo(() => {
+        if (!resolvedLocation) return null;
+        const norm = resolvedLocation.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const occupant = Object.values(store.baan?.batches || {}).find(
+            b => (b.location || '').toLowerCase().replace(/[^a-z0-9]/g, '') === norm && Number(b.quantityAvailable) > 0
+        );
+        if (!occupant) return { status: 'AVAILABLE' };
+        if (occupant.partNumber === formData.partNumber) {
+            return { status: 'SAME_PART', partNumber: occupant.partNumber, qty: occupant.quantityAvailable };
+        }
+        return { status: 'OCCUPIED', partNumber: occupant.partNumber, partName: occupant.partName, qty: occupant.quantityAvailable };
+    }, [resolvedLocation, store.baan?.batches, formData.partNumber]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -1157,11 +1204,23 @@ const BaanManualInward = () => {
         setStatusBanner(null);
         try {
             const user = JSON.parse(localStorage.getItem('cqa_user') || '{}');
-            const res = await inwardBaanParts(formData, user);
+            const finalLocation = formData.locationName && formData.locationCode 
+                ? `${formData.locationName.trim()} — ${formData.locationCode.trim()}`
+                : (formData.locationName || formData.locationCode || '').trim();
+
+            const res = await inwardBaanParts({
+                ...formData,
+                location: finalLocation,
+                locationName: formData.locationName.trim(),
+                locationCode: formData.locationCode.trim()
+            }, user);
+
             if (res.success) {
                 setFormData({ 
                     partNumber: '', 
                     partName: '', 
+                    locationName: '',
+                    locationCode: '',
                     location: '', 
                     batchId: '', 
                     quantity: '', 
@@ -1173,7 +1232,12 @@ const BaanManualInward = () => {
                     invoiceOrDcNumber: '', 
                     minimumStockLevel: '' 
                 });
-                setStatusBanner({ type: 'success', message: `Stock inwarded successfully! Batch allocated to ${formData.partNumber || 'inventory'}.` });
+                setIsCustomRack(false);
+                setIsCustomCode(false);
+                setStatusBanner({ 
+                    type: 'success', 
+                    message: `Stock inwarded successfully! Batch allocated to ${formData.partNumber || 'inventory'} in ${finalLocation}.` 
+                });
                 setTimeout(() => setStatusBanner(null), 6000);
             } else {
                 setStatusBanner({ type: 'error', message: res.message || 'Failed to inward parts.' });
@@ -1191,7 +1255,7 @@ const BaanManualInward = () => {
             <div className="flex-between" style={{ marginBottom: '0.875rem' }}>
                 <div>
                     <h2 className="baan-title" style={{ fontSize: '1.25rem' }}>Manual Stock Entry</h2>
-                    <p className="baan-subtitle">Direct GRN / Vendor shipment inward with batch and FIFO tracking</p>
+                    <p className="baan-subtitle">Direct GRN / Vendor shipment inward with batch, rack & bin sub-location tracking</p>
                 </div>
             </div>
 
@@ -1232,15 +1296,135 @@ const BaanManualInward = () => {
                         </div>
                     </div>
 
-                    {/* Row 2: Location, Quantity, UOM, Batch ID */}
-                    <div className="baan-row-4">
-                        <div className="baan-input-group">
-                            <label>Storage Location *</label>
-                            <select required value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })}>
-                                <option value="">-- Select Storage Location --</option>
-                                {locations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
-                            </select>
+                    {/* Row 2: Location No/Name & Location Code with Inline Creation */}
+                    <div style={{ 
+                        background: 'var(--baan-surface-muted)', 
+                        padding: '0.85rem 1rem', 
+                        borderRadius: 'var(--baan-radius-md)', 
+                        border: '1px solid var(--baan-border)', 
+                        marginBottom: '0.75rem' 
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.85rem', color: 'var(--baan-text-primary)' }}>
+                                <MapPin size={15} style={{ color: 'var(--baan-accent)' }} /> Storage Bin Allocation (Rack + Code)
+                            </div>
+                            {resolvedLocation && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {binOccupancy?.status === 'AVAILABLE' && (
+                                        <span className="baan-badge success" style={{ fontSize: '0.75rem' }}>
+                                            <CheckCircle2 size={12} /> Bin Free & Available
+                                        </span>
+                                    )}
+                                    {binOccupancy?.status === 'SAME_PART' && (
+                                        <span className="baan-badge info" style={{ fontSize: '0.75rem' }}>
+                                            <Info size={12} /> Stock Addition ({binOccupancy.qty} existing units)
+                                        </span>
+                                    )}
+                                    {binOccupancy?.status === 'OCCUPIED' && (
+                                        <span className="baan-badge danger" style={{ fontSize: '0.75rem' }}>
+                                            <AlertTriangle size={12} /> Occupied by {binOccupancy.partNumber} ({binOccupancy.qty} units)
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                            {/* Rack No/Name */}
+                            <div className="baan-input-group">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                                    <label style={{ margin: 0 }}>1. Location / Rack No or Name *</label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setIsCustomRack(!isCustomRack); setFormData(p => ({ ...p, locationName: '' })); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--baan-accent)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', padding: 0 }}
+                                    >
+                                        {isCustomRack ? '← Select Existing' : '+ New Rack'}
+                                    </button>
+                                </div>
+                                {isCustomRack ? (
+                                    <input 
+                                        required 
+                                        autoFocus
+                                        placeholder="e.g. Rack 1, Rack-E, Store Shelf A" 
+                                        value={formData.locationName} 
+                                        onChange={e => setFormData({ ...formData, locationName: e.target.value })} 
+                                    />
+                                ) : (
+                                    <select 
+                                        required 
+                                        value={formData.locationName} 
+                                        onChange={e => {
+                                            if (e.target.value === '__NEW__') {
+                                                setIsCustomRack(true);
+                                                setFormData({ ...formData, locationName: '', locationCode: '' });
+                                            } else {
+                                                setFormData({ ...formData, locationName: e.target.value });
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Select Rack / Location --</option>
+                                        {existingRacks.map(rack => <option key={rack} value={rack}>{rack}</option>)}
+                                        <option value="__NEW__">+ Type New Rack No/Name...</option>
+                                    </select>
+                                )}
+                            </div>
+
+                            {/* Location Code */}
+                            <div className="baan-input-group">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                                    <label style={{ margin: 0 }}>2. Location Code (Bin / Slot / Compartment) *</label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setIsCustomCode(!isCustomCode); setFormData(p => ({ ...p, locationCode: '' })); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--baan-accent)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', padding: 0 }}
+                                    >
+                                        {isCustomCode ? '← Select Existing' : '+ New Code'}
+                                    </button>
+                                </div>
+                                {isCustomCode || existingCodes.length === 0 ? (
+                                    <input 
+                                        required 
+                                        placeholder="e.g. Code A, Code B, Bin 1, Slot 2" 
+                                        value={formData.locationCode} 
+                                        onChange={e => setFormData({ ...formData, locationCode: e.target.value })} 
+                                    />
+                                ) : (
+                                    <select 
+                                        required 
+                                        value={formData.locationCode} 
+                                        onChange={e => {
+                                            if (e.target.value === '__NEW__') {
+                                                setIsCustomCode(true);
+                                                setFormData({ ...formData, locationCode: '' });
+                                            } else {
+                                                setFormData({ ...formData, locationCode: e.target.value });
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Select Bin / Location Code --</option>
+                                        {existingCodes.map(c => <option key={c} value={c}>{c}</option>)}
+                                        <option value="__NEW__">+ Type New Location Code...</option>
+                                    </select>
+                                )}
+                            </div>
+                        </div>
+
+                        {resolvedLocation && (
+                            <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--baan-text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span>Resolved Storage Bin:</span>
+                                <strong style={{ color: 'var(--baan-accent)', fontFamily: 'monospace' }}>📍 {resolvedLocation}</strong>
+                                {binOccupancy?.status === 'OCCUPIED' && (
+                                    <span style={{ color: 'var(--baan-danger)', fontWeight: 600 }}>
+                                        (⚠️ Collision Warning: Select a different Location Code to separate parts in this rack)
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Row 3: Quantity, UOM, Batch ID */}
+                    <div className="baan-row-3">
                         <div className="baan-input-group">
                             <label>Quantity Added *</label>
                             <input required type="number" min="1" placeholder="0" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: e.target.value })} />
@@ -1261,8 +1445,8 @@ const BaanManualInward = () => {
                             </select>
                         </div>
                         <div className="baan-input-group">
-                            <label>Batch ID (Auto-generated if blank)</label>
-                            <input placeholder="Vendor Lot / GRN ID" value={formData.batchId} onChange={e => setFormData({ ...formData, batchId: e.target.value })} />
+                            <label>Batch ID (Vendor Lot / GRN ID)</label>
+                            <input placeholder="e.g. Bat-2, Lot-01 (Auto if blank)" value={formData.batchId} onChange={e => setFormData({ ...formData, batchId: e.target.value })} />
                         </div>
                     </div>
                 </div>

@@ -1751,16 +1751,42 @@ export const CQAProvider = ({ children }) => {
                 for (const data of rows) {
                     const currentRow = rowNumber++;
                     const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-                    const cleanLoc = (data.location || '').replace(/[^a-zA-Z0-9]/g, '');
+                    const cleanPart = (data.partNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    
+                    const locName = (data.locationName || '').trim();
+                    const locCode = (data.locationCode || '').trim();
+                    let resolvedLocation = (data.location || '').trim();
+                    if (locName && locCode) {
+                        resolvedLocation = `${locName} — ${locCode}`;
+                    } else if (locName) {
+                        resolvedLocation = locName;
+                    }
+
+                    const cleanLoc = (resolvedLocation || '').replace(/[^a-zA-Z0-9]/g, '');
                     const inwardId = `INW-BLK-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     
+                    const userBatch = (data.batchNumber || '').trim();
                     let batchId;
-                    if (data.batchNumber && data.batchNumber.trim()) {
-                        batchId = `BAT-${data.batchNumber.trim()}-${cleanLoc}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
+                    if (userBatch) {
+                        batchId = `BAT-${cleanPart}-${userBatch.replace(/[^a-zA-Z0-9_-]/g, '')}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     } else {
-                        batchId = `BAT-BLK-${cleanLoc}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
+                        batchId = `BAT-${cleanPart}-${cleanLoc || 'GEN'}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     }
                     
+                    // Auto-register location in baan_locations if not exists
+                    if (locName) {
+                        const locDocId = (locName + (locCode ? `_${locCode}` : '')).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+                        batch.set(doc(db, 'baan_locations', locDocId), {
+                            id: locDocId,
+                            name: locName,
+                            code: locCode || 'Default',
+                            fullName: resolvedLocation,
+                            status: 'Active',
+                            createdBy: uploader,
+                            createdAt: timestamp
+                        }, { merge: true });
+                    }
+
                     // 1. Create Inward Log / Movement Log
                     batch.set(doc(collection(db, 'baan_inventory_movements')), {
                         id: inwardId,
@@ -1770,7 +1796,11 @@ export const CQAProvider = ({ children }) => {
                         quantity: data.qty,
                         perUnitCost: data.cost,
                         invoiceOrDcNumber: data.invoice,
-                        batchNumber: data.batchNumber || batchId,
+                        batchId: batchId,
+                        batchNumber: userBatch || batchId,
+                        location: resolvedLocation,
+                        locationName: locName,
+                        locationCode: locCode,
                         uploadedBy: uploader,
                         uploadedAt: timestamp,
                         timestamp,
@@ -1781,8 +1811,11 @@ export const CQAProvider = ({ children }) => {
                         id: inwardId,
                         partNumber: data.partNo,
                         partName: data.partName,
-                        location: data.location,
+                        location: resolvedLocation,
+                        locationName: locName,
+                        locationCode: locCode,
                         batchId: batchId,
+                        batchNumber: userBatch || batchId,
                         quantity: data.qty,
                         reference: data.invoice,
                         remarks: data.remarks || 'Bulk Upload',
@@ -1794,9 +1827,12 @@ export const CQAProvider = ({ children }) => {
                     const batchRef = doc(db, 'baan_batches', batchId);
                     batch.set(batchRef, {
                         id: batchId,
+                        batchNumber: userBatch || batchId,
                         partNumber: data.partNo,
                         partName: data.partName,
-                        location: data.location,
+                        location: resolvedLocation,
+                        locationName: locName,
+                        locationCode: locCode,
                         inwardDate: timestamp,
                         quantityTotal: Number(data.qty),
                         quantityAvailable: Number(data.qty),
@@ -1804,8 +1840,7 @@ export const CQAProvider = ({ children }) => {
                         uom: data.uom,
                         minimumStockLevel: Number(data.minStock),
                         reference: data.invoice,
-                        mpn: data.mpn || '',
-                        batchNumber: data.batchNumber || ''
+                        mpn: data.mpn || ''
                     }, { merge: true });
 
                     // 3. Update Part Master
@@ -1846,40 +1881,111 @@ export const CQAProvider = ({ children }) => {
         inwardBaanParts: async (data, user) => {
             const timestamp = new Date().toISOString();
             const inwardId = `INW-${Date.now()}`;
-            const batchId = data.batchId || `BAT-${Date.now()}`;
+            
+            const locationName = (data.locationName || '').trim();
+            const locationCode = (data.locationCode || '').trim();
+            let resolvedLocation = (data.location || '').trim();
+            if (locationName && locationCode) {
+                resolvedLocation = `${locationName} — ${locationCode}`;
+            } else if (locationName) {
+                resolvedLocation = locationName;
+            }
 
-            // Validation: One location stores only one type of part
-            const otherPartInSameLoc = Object.values(store.baan.batches).find(
-                b => b.location === data.location && b.partNumber !== data.partNumber && b.quantityAvailable > 0
-            );
-            if (otherPartInSameLoc) {
-                return { success: false, message: `Location "${data.location}" is already occupied by Part "${otherPartInSameLoc.partNumber}".` };
+            const normalizeLoc = (loc) => (loc || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const targetNormLoc = normalizeLoc(resolvedLocation);
+
+            // Validation: One specific location bin stores only one type of part
+            // Allows same Rack if Location Code is different (e.g. Rack 1 Code A vs Rack 1 Code B)
+            if (targetNormLoc) {
+                const otherPartInSameLoc = Object.values(store.baan?.batches || {}).find(
+                    b => normalizeLoc(b.location) === targetNormLoc && b.partNumber !== data.partNumber && Number(b.quantityAvailable) > 0
+                );
+                if (otherPartInSameLoc) {
+                    return { 
+                        success: false, 
+                        message: `Storage Location "${resolvedLocation}" is already occupied by Part "${otherPartInSameLoc.partNumber}" (${otherPartInSameLoc.quantityAvailable} units active). Please use a different Location Code or Rack.` 
+                    };
+                }
+            }
+
+            // Auto-register location in baan_locations if not exists
+            if (locationName) {
+                const locDocId = (locationName + (locationCode ? `_${locationCode}` : '')).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+                await setDoc(doc(db, 'baan_locations', locDocId), {
+                    id: locDocId,
+                    name: locationName,
+                    code: locationCode || 'Default',
+                    fullName: resolvedLocation,
+                    status: 'Active',
+                    createdBy: (user?.name || user?.id || 'System'),
+                    createdAt: timestamp
+                }, { merge: true });
+            }
+
+            // Scoped Batch ID Generation - guaranteed never to collide across different parts
+            const userBatch = (data.batchNumber || data.batchId || '').trim();
+            const cleanPart = (data.partNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanLoc = targetNormLoc || 'GEN';
+
+            let batchId;
+            if (data.batchId && data.batchId.startsWith('BAT-') && data.batchId.includes(cleanPart)) {
+                batchId = data.batchId;
+            } else if (userBatch) {
+                const cleanUserBatch = userBatch.replace(/[^a-zA-Z0-9_-]/g, '');
+                batchId = `BAT-${cleanPart}-${cleanUserBatch}-${Date.now()}`;
+            } else {
+                batchId = `BAT-${cleanPart}-${cleanLoc}-${Date.now()}`;
             }
 
             // 1. Create Inward Log
-            await setDoc(doc(db, 'baan_inward_logs', inwardId), { ...data, id: inwardId, inwardBy: (user?.name || user?.id || 'System'), timestamp });
+            await setDoc(doc(db, 'baan_inward_logs', inwardId), { 
+                ...data, 
+                id: inwardId, 
+                location: resolvedLocation,
+                locationName: locationName || '',
+                locationCode: locationCode || '',
+                batchId,
+                batchNumber: userBatch || batchId,
+                inwardBy: (user?.name || user?.id || 'System'), 
+                timestamp 
+            });
 
             // 2. Create/Update Batch
             const batchRef = doc(db, 'baan_batches', batchId);
             const batchSnap = await getDoc(batchRef);
             if (batchSnap.exists()) {
                 const existing = batchSnap.data();
+                if (existing.partNumber && existing.partNumber !== data.partNumber) {
+                    return { 
+                        success: false, 
+                        message: `Batch ID "${userBatch || batchId}" already belongs to Part "${existing.partNumber}". Different parts cannot share the same batch.` 
+                    };
+                }
                 await setDoc(batchRef, {
                     ...existing,
+                    partNumber: data.partNumber,
+                    partName: data.partName,
+                    location: resolvedLocation,
+                    locationName: locationName || existing.locationName || '',
+                    locationCode: locationCode || existing.locationCode || '',
                     quantityTotal: Number(existing.quantityTotal) + Number(data.quantity),
                     quantityAvailable: Number(existing.quantityAvailable) + Number(data.quantity),
                     perUnitCost: Number(data.perUnitCost || existing.perUnitCost || 0),
                     uom: data.uom || existing.uom || '',
                     minimumStockLevel: Number(data.minimumStockLevel || existing.minimumStockLevel || 0),
                     reference: data.invoiceOrDcNumber || data.reference || existing.reference || '',
-                    mpn: data.mpn || existing.mpn || ''
+                    mpn: data.mpn || existing.mpn || '',
+                    batchNumber: userBatch || existing.batchNumber || batchId
                 }, { merge: true });
             } else {
                 await setDoc(batchRef, {
                     id: batchId,
+                    batchNumber: userBatch || batchId,
                     partNumber: data.partNumber,
                     partName: data.partName,
-                    location: data.location,
+                    location: resolvedLocation,
+                    locationName: locationName || '',
+                    locationCode: locationCode || '',
                     inwardDate: data.inwardDate || timestamp,
                     quantityTotal: Number(data.quantity),
                     quantityAvailable: Number(data.quantity),
@@ -1892,8 +1998,6 @@ export const CQAProvider = ({ children }) => {
             }
 
             // 3. Update Part Master (ensure part exists)
-            // Rule: Internal Part Number must be unique names. 
-            // We use partNumber as ID, so it's naturally unique in this collection.
             await setDoc(doc(db, 'baan_parts', data.partNumber), {
                 id: data.partNumber,
                 name: data.partName,
@@ -1906,8 +2010,12 @@ export const CQAProvider = ({ children }) => {
             await addDoc(collection(db, 'baan_inventory_movements'), {
                 movementType: 'INWARD',
                 partNumber: data.partNumber,
-                partNo: data.partNumber, // Support both for backward compatibility
+                partNo: data.partNumber,
                 batchId,
+                batchNumber: userBatch || batchId,
+                location: resolvedLocation,
+                locationName: locationName || '',
+                locationCode: locationCode || '',
                 quantity: data.quantity,
                 qtyAdded: Number(data.quantity),
                 perUnitCost: Number(data.perUnitCost || 0),
@@ -1917,7 +2025,7 @@ export const CQAProvider = ({ children }) => {
                 timestamp
             });
 
-            return { success: true };
+            return { success: true, batchId };
         },
         requestBaanPart: async (request, user) => {
             const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
