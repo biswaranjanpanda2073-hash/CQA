@@ -1053,25 +1053,27 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             {/* ─── MODAL: SERIAL RULES & GOVERNANCE ─── */}
             {serialRulesProject && (
                 <div className="modal-overlay" onClick={() => setSerialRulesProject(null)}>
-                    <div className="card modal-box animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 580 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <div className="card modal-box animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+                        <div className="modal-header">
                             <div>
                                 <h3 className="font-extrabold text-lg" style={{ margin: 0 }}>
                                     Serial Number Governance & Validation
                                 </h3>
                                 <span className="text-muted text-xs">
-                                    Project: <strong>{serialRulesProject.name}</strong>
+                                    Project: <strong style={{ color: 'var(--text-main)' }}>{serialRulesProject.name}</strong>
                                 </span>
                             </div>
-                            <button className="btn-ghost" onClick={() => setSerialRulesProject(null)}>
+                            <button className="btn-ghost" onClick={() => setSerialRulesProject(null)} style={{ padding: '6px', borderRadius: '50%' }}>
                                 <X size={18} />
                             </button>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                             {/* Regex Validation Pattern */}
                             <div>
-                                <label className="form-label text-xs font-bold">Serial Number Regex Pattern *</label>
+                                <label className="form-label text-xs font-bold" style={{ display: 'block', marginBottom: '0.35rem' }}>
+                                    Serial Number Regex Pattern *
+                                </label>
                                 <input
                                     type="text"
                                     className="form-control font-mono text-sm"
@@ -1079,7 +1081,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                     onChange={(e) => setSerialRulesData(p => ({ ...p, regex: e.target.value }))}
                                     placeholder="^[A-Z0-9-]{6,25}$"
                                 />
-                                <span className="text-muted text-xs">
+                                <span className="text-muted text-xs" style={{ display: 'block', marginTop: '0.35rem' }}>
                                     Controls scan pattern validation at terminal intake.
                                 </span>
                             </div>
@@ -1089,33 +1091,38 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                                 background: 'var(--bg-main)',
                                 border: '1px solid var(--border)',
                                 borderRadius: 'var(--radius-md)',
-                                padding: '0.75rem'
+                                padding: '1rem'
                             }}>
-                                <label className="form-label text-xs font-bold" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <label className="form-label text-xs font-bold" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
                                     <Terminal size={14} color="var(--primary)" />
                                     <span>Interactive Serial Tester</span>
                                 </label>
-                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
                                     <input
                                         type="text"
                                         className="form-control font-mono text-sm"
                                         placeholder="Type test serial number (e.g. SN12345678)..."
                                         value={serialTestValue}
                                         onChange={(e) => setSerialTestValue(e.target.value)}
+                                        style={{ flex: 1 }}
                                     />
                                     {isSerialTestValid !== null && (
                                         <div style={{
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '0.25rem',
-                                            padding: '0.4rem 0.65rem',
-                                            borderRadius: 'var(--radius-sm)',
-                                            background: isSerialTestValid ? 'rgba(22, 101, 52, 0.12)' : 'rgba(153, 27, 27, 0.12)',
+                                            gap: '0.35rem',
+                                            padding: '0 0.875rem',
+                                            height: '44px',
+                                            borderRadius: 'var(--radius-md)',
+                                            background: isSerialTestValid ? 'var(--success-bg)' : 'var(--error-bg)',
                                             color: isSerialTestValid ? 'var(--success)' : 'var(--error)',
+                                            border: `1px solid ${isSerialTestValid ? 'var(--success)' : 'var(--error)'}`,
                                             fontSize: '11px',
-                                            fontWeight: 700
+                                            fontWeight: 800,
+                                            letterSpacing: '0.5px',
+                                            whiteSpace: 'nowrap'
                                         }}>
-                                            {isSerialTestValid ? <Check size={14} /> : <X size={14} />}
+                                            {isSerialTestValid ? <Check size={14} strokeWidth={3} /> : <X size={14} strokeWidth={3} />}
                                             <span>{isSerialTestValid ? 'VALID' : 'INVALID'}</span>
                                         </div>
                                     )}
@@ -1124,7 +1131,9 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
 
                             {/* Duplicate Policy */}
                             <div>
-                                <label className="form-label text-xs font-bold">Duplicate Serial Re-Entry Policy</label>
+                                <label className="form-label text-xs font-bold" style={{ display: 'block', marginBottom: '0.35rem' }}>
+                                    Duplicate Serial Re-Entry Policy
+                                </label>
                                 <select
                                     className="form-control"
                                     value={serialRulesData.duplicatePolicy}
@@ -1138,53 +1147,51 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
 
                             {/* Sub-assembly Requirements */}
                             <div>
-                                <label className="form-label text-xs font-bold mb-2">Mandatory Sub-Assembly Scans</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={serialRulesData.requirePcbScan}
-                                            onChange={(e) => setSerialRulesData(p => ({ ...p, requirePcbScan: e.target.checked }))}
-                                        />
-                                        <span>Require PCB Serial</span>
-                                    </label>
-                                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={serialRulesData.requireTopPanelScan}
-                                            onChange={(e) => setSerialRulesData(p => ({ ...p, requireTopPanelScan: e.target.checked }))}
-                                        />
-                                        <span>Require Top Panel Scan</span>
-                                    </label>
-                                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={serialRulesData.requireBottomPanelScan}
-                                            onChange={(e) => setSerialRulesData(p => ({ ...p, requireBottomPanelScan: e.target.checked }))}
-                                        />
-                                        <span>Require Bottom Panel Scan</span>
-                                    </label>
-                                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={serialRulesData.requireBatteryScan}
-                                            onChange={(e) => setSerialRulesData(p => ({ ...p, requireBatteryScan: e.target.checked }))}
-                                        />
-                                        <span>Require Battery Serial</span>
-                                    </label>
-                                    <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={serialRulesData.requireDisplayScan}
-                                            onChange={(e) => setSerialRulesData(p => ({ ...p, requireDisplayScan: e.target.checked }))}
-                                        />
-                                        <span>Require Display Serial</span>
-                                    </label>
+                                <label className="form-label text-xs font-bold" style={{ display: 'block', marginBottom: '0.625rem' }}>
+                                    Mandatory Sub-Assembly Scans
+                                </label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.625rem' }}>
+                                    {[
+                                        { key: 'requirePcbScan', label: 'Require PCB Serial' },
+                                        { key: 'requireTopPanelScan', label: 'Require Top Panel Scan' },
+                                        { key: 'requireBottomPanelScan', label: 'Require Bottom Panel Scan' },
+                                        { key: 'requireBatteryScan', label: 'Require Battery Serial' },
+                                        { key: 'requireDisplayScan', label: 'Require Display Serial' },
+                                    ].map(({ key, label }) => {
+                                        const isChecked = !!serialRulesData[key];
+                                        return (
+                                            <label
+                                                key={key}
+                                                className={`checkbox-card ${isChecked ? 'checked' : ''}`}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.75rem',
+                                                    padding: '0.75rem 1rem',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: `1px solid ${isChecked ? 'var(--primary)' : 'var(--border)'}`,
+                                                    background: isChecked ? 'var(--primary-alpha)' : 'var(--bg-input)',
+                                                    cursor: 'pointer',
+                                                    transition: 'var(--transition)'
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={(e) => setSerialRulesData(p => ({ ...p, [key]: e.target.checked }))}
+                                                    style={{ margin: 0, cursor: 'pointer', flexShrink: 0 }}
+                                                />
+                                                <span style={{ fontSize: '0.8125rem', fontWeight: isChecked ? 600 : 500, color: 'var(--text-main)' }}>
+                                                    {label}
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1.1rem', borderTop: '1px solid var(--border-light)' }}>
                             <button type="button" className="btn btn-secondary" onClick={() => setSerialRulesProject(null)}>
                                 Cancel
                             </button>

@@ -62,6 +62,250 @@ export const REASON_CATEGORIES = {
     ]
 };
 
+export const ADMIN_OVERRIDE_OPTIONS = [
+    {
+        id: 'STATUS_COMPLETE',
+        name: 'Complete',
+        badge: 'Finished Goods',
+        color: '#10b981',
+        badgeClass: 'success',
+        icon: 'CheckCircle2',
+        description: 'Mark the SN as completed without requiring it to pass through the remaining stations. Removes it from active shop floor WIP.',
+        targetStatus: 'Completed',
+        category: 'STATUS',
+        requiresConfirmationPhrase: null
+    },
+    {
+        id: 'STATUS_REJECTED',
+        name: 'Rejected',
+        badge: 'Lot Reject',
+        color: '#f43f5e',
+        badgeClass: 'danger',
+        icon: 'XCircle',
+        description: 'Mark the SN as rejected from any station. Immediately prevents further normal production movement.',
+        targetStatus: 'Reject',
+        category: 'STATUS',
+        requiresConfirmationPhrase: 'REJECT'
+    },
+    {
+        id: 'STATUS_SCRAPPED',
+        name: 'Scrapped',
+        badge: 'Condemned',
+        color: '#ef4444',
+        badgeClass: 'danger',
+        icon: 'AlertTriangle',
+        description: 'Mark the SN as scrapped from any station due to critical defect or damage. Permanently locks unit.',
+        targetStatus: 'Scrap',
+        category: 'STATUS',
+        requiresConfirmationPhrase: 'SCRAP'
+    },
+    {
+        id: 'MOVE_NEXT',
+        name: 'Move to Next Station',
+        badge: 'Sequence +1',
+        color: 'var(--primary, #6366f1)',
+        badgeClass: 'primary',
+        icon: 'ArrowRight',
+        description: 'Move the SN to the next station in its active workflow sequence.',
+        category: 'MOVEMENT',
+        requiresConfirmationPhrase: null
+    },
+    {
+        id: 'MOVE_PREV',
+        name: 'Move to Previous Station',
+        badge: 'Sequence -1',
+        color: '#f59e0b',
+        badgeClass: 'warning',
+        icon: 'CornerDownLeft',
+        description: 'Move the SN to the previous station in its workflow sequence for re-work or inspection.',
+        category: 'MOVEMENT',
+        requiresConfirmationPhrase: null
+    },
+    {
+        id: 'STATION_DIRECT',
+        name: 'Specific Destination Station',
+        badge: 'Custom Station',
+        color: '#8b5cf6',
+        badgeClass: 'info',
+        icon: 'Layers',
+        description: 'Manually select any target destination station from the workflow grid.',
+        category: 'STATION_PICK',
+        requiresConfirmationPhrase: null
+    }
+];
+
+export const STATUS_OVERRIDE_OPTIONS = [
+    {
+        id: 'Processing',
+        label: 'Active WIP (Processing)',
+        description: 'Reopen unit to active shop floor processing. Re-activates routing and station scanning.',
+        badgeClass: 'primary',
+        color: 'var(--primary)',
+        requiresStation: true,
+        requiresSuperAdminIfLocked: true
+    },
+    {
+        id: 'Completed',
+        label: 'Finished Goods (Completed)',
+        description: 'Directly mark unit as Completed (FG). Finalizes unit lifecycle.',
+        badgeClass: 'success',
+        color: '#10b981',
+        requiresStation: false
+    },
+    {
+        id: 'Scrap',
+        label: 'Terminal Scrap (Locked)',
+        description: 'Condemn and permanently lock unit as Scrap due to critical defect or damage.',
+        badgeClass: 'danger',
+        color: '#ef4444',
+        requiresStation: false,
+        requiresConfirmationPhrase: 'SCRAP'
+    },
+    {
+        id: 'Reject',
+        label: 'Terminal Rejection (Locked)',
+        description: 'Condemn and permanently lock unit as Reject for lot rejections.',
+        badgeClass: 'danger',
+        color: '#f43f5e',
+        requiresStation: false,
+        requiresConfirmationPhrase: 'REJECT'
+    },
+    {
+        id: 'HOLD',
+        label: 'Quarantine Hold',
+        description: 'Freeze unit progression at current station pending quality or engineering disposition.',
+        badgeClass: 'warning',
+        color: '#f59e0b',
+        requiresStation: false
+    },
+    {
+        id: 'RELEASE_HOLD',
+        label: 'Release from Quarantine Hold',
+        description: 'Clear quarantine hold flag and resume standard processing at current station.',
+        badgeClass: 'info',
+        color: '#06b6d4',
+        requiresStation: false
+    }
+];
+
+export const STATUS_OVERRIDE_REASON_CATEGORIES = {
+    'Quality & Testing': [
+        'False Failure / Defect Re-evaluation',
+        'QA Lead Re-inspection Signoff',
+        'Rework Exemption Approved',
+        'MRB Disposition Approved',
+        'Lot Quarantine Reversal'
+    ],
+    'Engineering': [
+        'Engineering Prototype / Validation Test',
+        'Firmware Diagnostics & Reflash Completed',
+        'Hardware Debug Exemption',
+        'ECO / Design Verification Waiver',
+        'Engineering Scrap Condemnation'
+    ],
+    'Operations & Inventory': [
+        'Line Rebalancing & Rework Return',
+        'Accidental Scan / Station Premature Completion',
+        'Urgent Dispatch Expedite',
+        'BAAN Inventory Stock Alignment',
+        'Batch Quarantine'
+    ],
+    'Data / System Correction': [
+        'Incorrect MES Status Entry',
+        'Operator Station Mismatch Correction',
+        'Testing Terminal Glitch Recovery',
+        'Terminal Scrap Status Reversal'
+    ],
+    'Other': [
+        'Management Directive',
+        'Other'
+    ]
+};
+
+export const validateStatusOverrideRecord = (unit, targetStatus, userRole) => {
+    if (!unit) {
+        return {
+            isValid: false,
+            statusKey: 'NOT_FOUND',
+            message: 'Unit serial number not found in database.'
+        };
+    }
+
+    const currentStatus = unit.status || 'Unknown';
+    const isLocked = ['Scrap', 'SCRAPPED', 'Reject', 'Rejected'].includes(currentStatus);
+    const isCompleted = ['Completed', 'Complete'].includes(currentStatus);
+    const isOnHold = unit.holdStatus === 'HOLD';
+
+    if (targetStatus === 'HOLD') {
+        if (isOnHold) {
+            return {
+                isValid: false,
+                statusKey: 'ALREADY_ON_HOLD',
+                message: 'Unit is already on Quarantine Hold.'
+            };
+        }
+    } else if (targetStatus === 'RELEASE_HOLD') {
+        if (!isOnHold) {
+            return {
+                isValid: false,
+                statusKey: 'NOT_ON_HOLD',
+                message: 'Unit is not currently on Hold.'
+            };
+        }
+    } else if (currentStatus.toUpperCase() === targetStatus.toUpperCase()) {
+        return {
+            isValid: false,
+            statusKey: 'ALREADY_IN_STATUS',
+            message: `Unit is already in "${currentStatus}" status.`
+        };
+    }
+
+    if (isLocked && (targetStatus === 'Processing' || targetStatus === 'Completed')) {
+        if (userRole !== 'Super Admin') {
+            return {
+                isValid: false,
+                statusKey: 'LOCKED_REQUIRES_SUPER_ADMIN',
+                message: `Unit is ${currentStatus} (Locked). Reopening requires Super Admin privilege.`
+            };
+        }
+    }
+
+    if (isCompleted && (targetStatus === 'Scrap' || targetStatus === 'Reject')) {
+        if (userRole !== 'Super Admin') {
+            return {
+                isValid: false,
+                statusKey: 'COMPLETED_REQUIRES_SUPER_ADMIN',
+                message: 'Condemning a Completed (FG) unit to Scrap/Reject requires Super Admin privilege.'
+            };
+        }
+    }
+
+    return {
+        isValid: true,
+        statusKey: 'READY_TO_OVERRIDE',
+        message: 'Unit is eligible for status override.'
+    };
+};
+
+export const calculateStatusOverrideRisk = (currentStatus, targetStatus) => {
+    if (['Scrap', 'SCRAPPED', 'Reject', 'Rejected'].includes(currentStatus) && targetStatus === 'Processing') {
+        return 'HIGH';
+    }
+    if (['Completed', 'Complete'].includes(currentStatus) && (targetStatus === 'Scrap' || targetStatus === 'Reject')) {
+        return 'HIGH';
+    }
+    if (targetStatus === 'Scrap' || targetStatus === 'Reject') {
+        return 'HIGH';
+    }
+    if (targetStatus === 'Completed') {
+        return 'MEDIUM';
+    }
+    if (targetStatus === 'HOLD' || targetStatus === 'RELEASE_HOLD') {
+        return 'LOW';
+    }
+    return 'LOW';
+};
+
 /**
  * Normalizes raw input (string, array, csv/xlsx rows) into unique, clean Serial Numbers
  */
@@ -146,7 +390,7 @@ export const calculateMovementClassification = (fromStationId, toStationId, proj
     const toStation = workflow.find(s => s.id === toStationId);
     const fromStation = workflow.find(s => s.id === fromStationId);
 
-    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject' || currentStatus === 'SCRAPPED') {
+    if (currentStatus === 'Completed' || currentStatus === 'Complete' || currentStatus === 'Scrap' || currentStatus === 'Scrapped' || currentStatus === 'Reject' || currentStatus === 'Rejected' || currentStatus === 'SCRAPPED') {
         return 'ADMIN_REOPEN';
     }
 
@@ -172,7 +416,7 @@ export const calculateMovementClassification = (fromStationId, toStationId, proj
  * - High: terminal move (FG / Scrap / Reject) or reopening closed/locked unit
  */
 export const calculateRiskLevel = (fromStationId, toStationId, project, currentStatus, skippedStations = []) => {
-    if (currentStatus === 'Completed' || currentStatus === 'Scrap' || currentStatus === 'Reject' || currentStatus === 'SCRAPPED') {
+    if (currentStatus === 'Completed' || currentStatus === 'Complete' || currentStatus === 'Scrap' || currentStatus === 'Scrapped' || currentStatus === 'Reject' || currentStatus === 'Rejected' || currentStatus === 'SCRAPPED') {
         return 'HIGH';
     }
 
@@ -198,7 +442,7 @@ export const calculateRiskLevel = (fromStationId, toStationId, project, currentS
 /**
  * Validates a single unit state against movement requirements
  */
-export const validateUnitRecord = (unit, targetStationId, targetProject, userRole) => {
+export const validateUnitRecord = (unit, targetStationId, targetProject, userRole, actionType = 'STATION_DIRECT') => {
     if (!unit) {
         return {
             isValid: false,
@@ -218,7 +462,89 @@ export const validateUnitRecord = (unit, targetStationId, targetProject, userRol
         };
     }
 
-    // Locked check: Scrap or Reject
+    // Status Override actions (Complete, Rejected, Scrapped) can be performed from ANY station
+    if (actionType === 'STATUS_COMPLETE') {
+        if (unit.status === 'Completed' || unit.status === 'Complete') {
+            return {
+                isValid: false,
+                statusKey: 'ALREADY_COMPLETED',
+                message: 'Unit is already marked as Completed (FG).'
+            };
+        }
+        return {
+            isValid: true,
+            statusKey: 'READY_TO_MOVE',
+            message: 'Unit is eligible for direct completion override.'
+        };
+    }
+
+    if (actionType === 'STATUS_REJECTED') {
+        if (['Reject', 'Rejected'].includes(unit.status)) {
+            return {
+                isValid: false,
+                statusKey: 'ALREADY_REJECTED',
+                message: 'Unit is already in Rejected status.'
+            };
+        }
+        return {
+            isValid: true,
+            statusKey: 'READY_TO_MOVE',
+            message: 'Unit is eligible for rejection override.'
+        };
+    }
+
+    if (actionType === 'STATUS_SCRAPPED') {
+        if (['Scrap', 'Scrapped', 'SCRAPPED'].includes(unit.status)) {
+            return {
+                isValid: false,
+                statusKey: 'ALREADY_SCRAPPED',
+                message: 'Unit is already in Scrapped status.'
+            };
+        }
+        return {
+            isValid: true,
+            statusKey: 'READY_TO_MOVE',
+            message: 'Unit is eligible for scrap override.'
+        };
+    }
+
+    // Movement validation: Next station
+    if (actionType === 'MOVE_NEXT') {
+        const curStId = unit.currentStation || 1;
+        const curIdx = workflow.findIndex(s => s.id === curStId);
+        if (curIdx === -1 || curIdx >= workflow.length - 1) {
+            return {
+                isValid: false,
+                statusKey: 'AT_FINAL_STATION',
+                message: 'Unit is already at final workflow station. Use Complete status override instead.'
+            };
+        }
+        return {
+            isValid: true,
+            statusKey: 'READY_TO_MOVE',
+            message: `Eligible to move forward to next station (${workflow[curIdx + 1]?.name}).`
+        };
+    }
+
+    // Movement validation: Previous station
+    if (actionType === 'MOVE_PREV') {
+        const curStId = unit.currentStation || 1;
+        const curIdx = workflow.findIndex(s => s.id === curStId);
+        if (curIdx <= 0) {
+            return {
+                isValid: false,
+                statusKey: 'AT_FIRST_STATION',
+                message: 'Unit is already at the first workflow station (Receiving).'
+            };
+        }
+        return {
+            isValid: true,
+            statusKey: 'READY_TO_MOVE',
+            message: `Eligible to move backward to previous station (${workflow[curIdx - 1]?.name}).`
+        };
+    }
+
+    // Locked check: Scrap or Reject for station movement
     if (unit.status === 'Scrap' || unit.status === 'Reject' || unit.status === 'SCRAPPED') {
         if (userRole !== 'Super Admin') {
             return {
@@ -229,7 +555,7 @@ export const validateUnitRecord = (unit, targetStationId, targetProject, userRol
         }
     }
 
-    // Completed check
+    // Completed check for station movement
     if (unit.status === 'Completed') {
         if (userRole !== 'Super Admin' && userRole !== 'Admin') {
             return {

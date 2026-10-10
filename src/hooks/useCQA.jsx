@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import { 
+import {
     db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
     ref, uploadBytes, getDownloadURL, uploadString,
     signInWithCustomToken, httpsCallable
@@ -131,7 +131,7 @@ export const CQAProvider = ({ children }) => {
     const resolveActiveProject = useCallback((unit) => {
         if (!unit) return 'Device';
         const stName = (unit.stationName || '').toUpperCase().trim();
-        
+
         // 1. DEFINITIVE STATION MAPPING
         // These stations ONLY exist in specific project workflows.
         // Station names are evaluated as the ultimate source of truth.
@@ -141,7 +141,7 @@ export const CQAProvider = ({ children }) => {
         if (stName === 'REJECTION REVIEW') return 'Peripherals';
         if (stName === 'REJECTION') return 'Inward QC';
         if (['INITIAL QC', 'LOOPER ANALYSIS', 'HARDWARE QC / DEBUG', 'HARDWARE QC', 'HARDWARE REWORK', 'ASSEMBLY', 'FIRMWARE QC', 'PACKING & CLEANING', 'SCRAP ANALYSIS'].some(s => stName === s)) return 'Calculator';
-        
+
         // 2. RECENT HISTORY SEARCH (Newest First)
         if (!unit) return 'Other';
         if (unit.project) return unit.project;
@@ -174,7 +174,7 @@ export const CQAProvider = ({ children }) => {
     useEffect(() => {
         const validStatuses = ['Processing', 'In Progress', 'WIP', 'In-Progress', 'Processing...'];
         const wipQuery = query(devicesCol, where('status', 'in', validStatuses));
-        
+
         const unsubscribeWip = onSnapshot(wipQuery, (snapshot) => {
             const newWip = {};
             snapshot.docs.forEach(d => { newWip[d.id] = d.data(); });
@@ -242,19 +242,19 @@ export const CQAProvider = ({ children }) => {
 
         const cleanId = id.trim().toUpperCase().replace(/\//g, '-');
         const unit = await getUnitById(cleanId);
-        
+
         const projName = getDisplayName('projects', targetProject);
         const isRefurbishment = targetProject === 'Refurbishment' || projName === 'Refurbishment';
 
         // Receiving Station (ID: 1)
         if (targetStation.id === 1) {
             if (!unit) return { success: true }; // New Unit Allowed
-            
+
             if (unit.status === 'Processing') {
                 return { success: false, message: `ID "${cleanId}" is locked in ${unit.stationName}.` };
             }
-            
-            const promptMsg = isRefurbishment 
+
+            const promptMsg = isRefurbishment
                 ? `Refurbishing Unit "${cleanId}" (Previously ${unit.status}). Proceed?`
                 : `Unit "${cleanId}" was ${unit.status}. Re-Receive into ${projName}?`;
 
@@ -266,13 +266,13 @@ export const CQAProvider = ({ children }) => {
 
         const unitCat = getProjectCategory(unit._resolvedProject || unit.project);
         const targetCat = getProjectCategory(targetProject);
-        
+
         if (unitCat !== targetCat && unit.currentStation !== targetStation.id) {
             return { success: false, message: `Category Mismatch: Unit belongs to ${unitCat}.` };
         }
-        
+
         if (unit.status === 'Scrap' || unit.status === 'Reject' || unit.status === 'SCRAPPED') {
-             return { success: false, message: `Unit is ${unit.status.toUpperCase()} (Locked).` };
+            return { success: false, message: `Unit is ${unit.status.toUpperCase()} (Locked).` };
         }
 
         if (unit.holdStatus === 'HOLD') {
@@ -285,7 +285,7 @@ export const CQAProvider = ({ children }) => {
         if (unit.currentStation !== targetStation.id || (unitStationName !== targetStationName && !unitStationName.includes(targetStationName))) {
             return { success: false, message: `Sequence Mismatch: Unit is currently at ${unit.stationName || 'Unknown'}.` };
         }
-        
+
         return { success: true };
     };
 
@@ -293,23 +293,23 @@ export const CQAProvider = ({ children }) => {
         const cleanId = id.trim().toUpperCase().replace(/\//g, '-');
         const { station, project, result, decision, details, operator } = data;
         const existingUnit = await getUnitById(cleanId);
-        
+
         let updatedUnit = existingUnit ? { ...existingUnit } : {
-            id: cleanId, 
-            project, 
-            looper: 1, 
-            history: [], 
-            status: 'Processing', 
+            id: cleanId,
+            project,
+            looper: 1,
+            history: [],
+            status: 'Processing',
             createdAt: new Date().toISOString()
         };
 
         const timestamp = new Date().toISOString();
         const looperIndex = updatedUnit.looper;
-        const historyEntry = { 
-            station: station.name, 
-            stationId: station.id, 
-            timestamp, 
-            result: result || decision || 'COMPLETED', 
+        const historyEntry = {
+            station: station.name,
+            stationId: station.id,
+            timestamp,
+            result: result || decision || 'COMPLETED',
             operator: operator || 'SYSTEM_ADMIN',
             looper: looperIndex,
             project: project // Track project per history entry for robustness
@@ -574,7 +574,7 @@ export const CQAProvider = ({ children }) => {
             }
         }
 
-        let nextStation = null; 
+        let nextStation = null;
         let nextStationName = '';
 
         if (station.id === 1) {
@@ -593,30 +593,30 @@ export const CQAProvider = ({ children }) => {
             if (updatedUnit.project !== project) {
                 updatedUnit.project = project;
             }
-            
+
             if (projectCategory === 'Device') {
-            switch (station.id) {
-                case 2: if (result === 'Pass') { nextStation = 5; nextStationName = 'FINAL QC'; } else { if (decision === 'scrap_review') { nextStation = 8; nextStationName = 'SCRAP REVIEW'; } else { nextStation = 3; nextStationName = 'DEBUG'; } } break;
-                case 3: if (result === 'Pass') { nextStation = 4; nextStationName = 'REWORK'; } else { nextStation = 8; nextStationName = 'SCRAP REVIEW'; } break;
-                case 4: if (result === 'Pass') { nextStation = 5; nextStationName = 'FINAL QC'; } else { nextStation = 3; nextStationName = 'DEBUG'; } break;
-                case 5: if (result === 'Pass') { nextStation = 6; nextStationName = 'PACKING'; } else { nextStation = 3; nextStationName = 'DEBUG'; } break;
-                case 6: if (result === 'Pass') { nextStation = 7; nextStationName = 'MOVE TO FG'; } else { if (decision === 'audit') { nextStation = 5; nextStationName = 'FINAL QC'; } else { nextStation = 4; nextStationName = 'REWORK'; } } break;
-                case 7: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
-                case 8: if (decision === 'scrap') { updatedUnit.status = 'Scrap'; nextStation = null; nextStationName = 'SCRAP (LOCKED)'; updatedUnit.lockDate = timestamp; } else { nextStation = 4; nextStationName = 'REWORK'; } break;
+                switch (station.id) {
+                    case 2: if (result === 'Pass') { nextStation = 5; nextStationName = 'FINAL QC'; } else { if (decision === 'scrap_review') { nextStation = 8; nextStationName = 'SCRAP REVIEW'; } else { nextStation = 3; nextStationName = 'DEBUG'; } } break;
+                    case 3: if (result === 'Pass') { nextStation = 4; nextStationName = 'REWORK'; } else { nextStation = 8; nextStationName = 'SCRAP REVIEW'; } break;
+                    case 4: if (result === 'Pass') { nextStation = 5; nextStationName = 'FINAL QC'; } else { nextStation = 3; nextStationName = 'DEBUG'; } break;
+                    case 5: if (result === 'Pass') { nextStation = 6; nextStationName = 'PACKING'; } else { nextStation = 3; nextStationName = 'DEBUG'; } break;
+                    case 6: if (result === 'Pass') { nextStation = 7; nextStationName = 'MOVE TO FG'; } else { if (decision === 'audit') { nextStation = 5; nextStationName = 'FINAL QC'; } else { nextStation = 4; nextStationName = 'REWORK'; } } break;
+                    case 7: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
+                    case 8: if (decision === 'scrap') { updatedUnit.status = 'Scrap'; nextStation = null; nextStationName = 'SCRAP (LOCKED)'; updatedUnit.lockDate = timestamp; } else { nextStation = 4; nextStationName = 'REWORK'; } break;
+                }
+            } else if (projectCategory === 'Peripherals') {
+                switch (station.id) {
+                    case 2: if (result === 'Pass') { nextStation = 3; nextStationName = 'MOVE TO FG'; } else { nextStation = 4; nextStationName = 'REJECTION REVIEW'; } break;
+                    case 3: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
+                    case 4: if (result === 'Pass') { updatedUnit.status = 'Reject'; nextStation = null; nextStationName = 'REJECTED'; updatedUnit.lockDate = timestamp; } else { nextStation = 3; nextStationName = 'MOVE TO FG'; } break;
+                }
+            } else if (projectCategory === 'Inward QC') {
+                switch (station.id) {
+                    case 2: if (result === 'Pass') { nextStation = 3; nextStationName = 'MOVE TO FG'; } else { nextStation = 4; nextStationName = 'REJECTION'; } break;
+                    case 3: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
+                    case 4: if (result === 'Pass') { updatedUnit.status = 'Reject'; nextStation = null; nextStationName = 'REJECTED'; updatedUnit.lockDate = timestamp; } else { nextStation = 3; nextStationName = 'MOVE TO FG'; } break;
+                }
             }
-        } else if (projectCategory === 'Peripherals') {
-            switch (station.id) {
-                case 2: if (result === 'Pass') { nextStation = 3; nextStationName = 'MOVE TO FG'; } else { nextStation = 4; nextStationName = 'REJECTION REVIEW'; } break;
-                case 3: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
-                case 4: if (result === 'Pass') { updatedUnit.status = 'Reject'; nextStation = null; nextStationName = 'REJECTED'; updatedUnit.lockDate = timestamp; } else { nextStation = 3; nextStationName = 'MOVE TO FG'; } break;
-            }
-        } else if (projectCategory === 'Inward QC') {
-            switch (station.id) {
-                case 2: if (result === 'Pass') { nextStation = 3; nextStationName = 'MOVE TO FG'; } else { nextStation = 4; nextStationName = 'REJECTION'; } break;
-                case 3: updatedUnit.status = 'Completed'; nextStation = null; nextStationName = 'FG (DONE)'; updatedUnit.cycleEndDate = timestamp; break;
-                case 4: if (result === 'Pass') { updatedUnit.status = 'Reject'; nextStation = null; nextStationName = 'REJECTED'; updatedUnit.lockDate = timestamp; } else { nextStation = 3; nextStationName = 'MOVE TO FG'; } break;
-            }
-        }
         }
 
         // ── Apply validated Target Station Override if provided ──
@@ -642,30 +642,30 @@ export const CQAProvider = ({ children }) => {
             }
         }
 
-        updatedUnit.currentStation = nextStation; 
+        updatedUnit.currentStation = nextStation;
         updatedUnit.stationName = nextStationName;
         updatedUnit.updatedAt = timestamp;
-        
+
         // Append history to array
         const oldHistory = Array.isArray(existingUnit?.history) ? existingUnit.history : [];
         updatedUnit.history = [...oldHistory, { ...historyEntry, details: { ...details } }];
-        
-        try { 
+
+        try {
             const deviceRef = doc(db, 'devices', cleanId);
             const safeData = JSON.parse(JSON.stringify(updatedUnit)); // Safely strip any undefined properties
-            
+
             await setDoc(deviceRef, safeData);
-            return true; 
-        } catch (e) { 
-            console.error("ProcessUnit Error:", e); 
-            return false; 
+            return true;
+        } catch (e) {
+            console.error("ProcessUnit Error:", e);
+            return false;
         }
     };
 
     const fetchStationMetrics = useCallback(async (project) => {
         try {
             const projectDisp = getDisplayName('projects', project);
-            
+
             // Filter entirely from the synchronized local WIP cache (0 network requests)
             const wipUnits = Object.values(store.wipDevices || {}).filter(u => {
                 const activeP = resolveActiveProject(u);
@@ -673,15 +673,15 @@ export const CQAProvider = ({ children }) => {
                 if (isRefurb && (activeP === 'Device' || activeP === 'Refurbishment')) return true;
                 return activeP === project || activeP === projectDisp;
             });
-                
-            const wipCountPerStation = wipUnits.reduce((acc, u) => { 
+
+            const wipCountPerStation = wipUnits.reduce((acc, u) => {
                 if (u.stationName) {
                     const sKey = u.stationName.toUpperCase().trim();
-                    acc[sKey] = (acc[sKey] || 0) + 1; 
+                    acc[sKey] = (acc[sKey] || 0) + 1;
                 }
-                return acc; 
+                return acc;
             }, {});
-            
+
             return { wipBreakdown: wipCountPerStation };
         } catch (error) {
             console.error("fetchStationMetrics error:", error);
@@ -752,11 +752,11 @@ export const CQAProvider = ({ children }) => {
 
             const storageRef = ref(storage, path);
             const uploadTask = uploadBytes(storageRef, blob);
-            
+
             // 15 second timeout to prevent infinite hanging
             const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timeout after 15s')), 15000));
             await Promise.race([uploadTask, timeout]);
-            
+
             const downloadURL = await getDownloadURL(storageRef);
             return { url: downloadURL, error: null };
         } catch (error) {
@@ -808,22 +808,22 @@ export const CQAProvider = ({ children }) => {
                 }
 
                 const existingUnit = existingUnits[cleanId];
-                
+
                 let updatedUnit = existingUnit ? { ...existingUnit } : {
-                    id: cleanId, 
-                    project, 
-                    looper: 1, 
-                    history: [], 
-                    status: 'Processing', 
+                    id: cleanId,
+                    project,
+                    looper: 1,
+                    history: [],
+                    status: 'Processing',
                     createdAt: timestamp
                 };
 
                 const looperIndex = updatedUnit.looper;
-                const historyEntry = { 
-                    station: station.name, 
-                    stationId: station.id, 
-                    timestamp, 
-                    result: 'COMPLETED', 
+                const historyEntry = {
+                    station: station.name,
+                    stationId: station.id,
+                    timestamp,
+                    result: 'COMPLETED',
                     operator: operator || 'SYSTEM_ADMIN',
                     looper: looperIndex,
                     project: project,
@@ -840,7 +840,7 @@ export const CQAProvider = ({ children }) => {
                 updatedUnit.project = project;
                 updatedUnit.status = 'Processing';
                 updatedUnit.details = { ...details };
-                updatedUnit.currentStation = nextStation; 
+                updatedUnit.currentStation = nextStation;
                 updatedUnit.stationName = nextStationName;
                 updatedUnit.updatedAt = timestamp;
 
@@ -852,7 +852,7 @@ export const CQAProvider = ({ children }) => {
                 const safeData = JSON.parse(JSON.stringify(updatedUnit)); // Safely strip any undefined properties
 
                 currentBatch.set(deviceRef, safeData);
-                
+
                 results.success++;
             }
 
@@ -877,7 +877,7 @@ export const CQAProvider = ({ children }) => {
             { name: 'baan_part_issuance', key: 'partIssuance' },
             { name: 'baan_inventory_movements', key: 'inventoryMovements' }
         ];
-        
+
         const unsubscribes = collections.map(({ name, key }) => {
             return onSnapshot(collection(db, name), (snapshot) => {
                 const data = {};
@@ -942,7 +942,7 @@ export const CQAProvider = ({ children }) => {
         for (const sn of snList) {
             const unit = fetchResults[sn];
             const validation = validateUnitRecord(unit, targetStationId, unit?.project, userRole);
-            
+
             let skipped = [];
             let classification = null;
             let risk = 'LOW';
@@ -1216,8 +1216,8 @@ export const CQAProvider = ({ children }) => {
         const finalStatus = (results.failed === 0 && results.success > 0)
             ? 'COMPLETED'
             : results.success > 0
-            ? 'PARTIALLY_COMPLETED'
-            : 'FAILED';
+                ? 'PARTIALLY_COMPLETED'
+                : 'FAILED';
 
         const completedTimestamp = new Date().toISOString();
         const finalUpdates = {
@@ -1565,9 +1565,9 @@ export const CQAProvider = ({ children }) => {
     }, []);
 
     const contextValue = {
-        store, loading, 
-        getUnit: getUnitById, 
-        validateScan: validateScanStatus, 
+        store, loading,
+        getUnit: getUnitById,
+        validateScan: validateScanStatus,
         processUnit, bulkProcessUnits, fetchStationMetrics, uploadProofImage,
         validateMovementUnits, executeAdminMovement, reverseAdminMovement, fetchAdminMovements,
         unholdCalculatorSerial, processScrapAnalysis,
@@ -1654,12 +1654,12 @@ export const CQAProvider = ({ children }) => {
         // ─── BAAN MODULE OPERATIONS ───
         createBaanLocation: async (loc, user) => {
             const locId = loc.id || loc.name.toUpperCase().replace(/\s+/g, '_');
-            await setDoc(doc(db, 'baan_locations', locId), { 
-                ...loc, 
-                id: locId, 
+            await setDoc(doc(db, 'baan_locations', locId), {
+                ...loc,
+                id: locId,
                 status: loc.status || 'Active',
                 createdBy: user?.name || user?.id || 'System',
-                createdAt: new Date().toISOString() 
+                createdAt: new Date().toISOString()
             });
             return { success: true };
         },
@@ -1683,13 +1683,13 @@ export const CQAProvider = ({ children }) => {
             const targetId = id;
             const targetName = locData?.name;
             const targetCode = locData?.code;
-            
+
             const matchesLoc = (val) => {
                 if (!val) return false;
                 const s = String(val).trim().toUpperCase();
                 return (targetId && s === String(targetId).trim().toUpperCase()) ||
-                       (targetName && s === String(targetName).trim().toUpperCase()) ||
-                       (targetCode && s === String(targetCode).trim().toUpperCase());
+                    (targetName && s === String(targetName).trim().toUpperCase()) ||
+                    (targetCode && s === String(targetCode).trim().toUpperCase());
             };
 
             // 1. Current Stock Check
@@ -1701,9 +1701,9 @@ export const CQAProvider = ({ children }) => {
             });
 
             if (currentStock > 0) {
-                return { 
-                    success: false, 
-                    message: `Deletion Blocked: Location has ${currentStock} active stock units. Stock must be zero before deletion.` 
+                return {
+                    success: false,
+                    message: `Deletion Blocked: Location has ${currentStock} active stock units. Stock must be zero before deletion.`
                 };
             }
 
@@ -1726,9 +1726,9 @@ export const CQAProvider = ({ children }) => {
             });
 
             if (refCount > 0) {
-                return { 
-                    success: false, 
-                    message: `Deletion Blocked: ${refCount} historical transaction records depend on this location. You can archive it instead to preserve traceability.` 
+                return {
+                    success: false,
+                    message: `Deletion Blocked: ${refCount} historical transaction records depend on this location. You can archive it instead to preserve traceability.`
                 };
             }
 
@@ -1741,7 +1741,7 @@ export const CQAProvider = ({ children }) => {
             const uploadId = `BULK-${Date.now()}`;
             const uploader = user?.name || user?.id || 'System';
             const batch = writeBatch(db);
-            
+
             let successfulRows = 0;
             let existingPartsUpdated = 0;
             let newPartsCreated = 0;
@@ -1752,7 +1752,7 @@ export const CQAProvider = ({ children }) => {
                     const currentRow = rowNumber++;
                     const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
                     const cleanPart = (data.partNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    
+
                     const locName = (data.locationName || '').trim();
                     const locCode = (data.locationCode || '').trim();
                     let resolvedLocation = (data.location || '').trim();
@@ -1764,7 +1764,7 @@ export const CQAProvider = ({ children }) => {
 
                     const cleanLoc = (resolvedLocation || '').replace(/[^a-zA-Z0-9]/g, '');
                     const inwardId = `INW-BLK-${Date.now()}-${currentRow}-${uniqueSuffix}`;
-                    
+
                     const userBatch = (data.batchNumber || '').trim();
                     let batchId;
                     if (userBatch) {
@@ -1772,7 +1772,7 @@ export const CQAProvider = ({ children }) => {
                     } else {
                         batchId = `BAT-${cleanPart}-${cleanLoc || 'GEN'}-${Date.now()}-${currentRow}-${uniqueSuffix}`;
                     }
-                    
+
                     // Auto-register location in baan_locations if not exists
                     if (locName) {
                         const locDocId = (locName + (locCode ? `_${locCode}` : '')).toUpperCase().replace(/[^A-Z0-9]/g, '_');
@@ -1852,7 +1852,7 @@ export const CQAProvider = ({ children }) => {
                         minimumStockLevel: Number(data.minStock),
                         lastUpdated: timestamp
                     }, { merge: true });
-                    
+
                     if (store.baan.parts && store.baan.parts[data.partNo]) {
                         existingPartsUpdated++;
                     } else {
@@ -1881,7 +1881,7 @@ export const CQAProvider = ({ children }) => {
         inwardBaanParts: async (data, user) => {
             const timestamp = new Date().toISOString();
             const inwardId = `INW-${Date.now()}`;
-            
+
             const locationName = (data.locationName || '').trim();
             const locationCode = (data.locationCode || '').trim();
             let resolvedLocation = (data.location || '').trim();
@@ -1901,9 +1901,9 @@ export const CQAProvider = ({ children }) => {
                     b => normalizeLoc(b.location) === targetNormLoc && b.partNumber !== data.partNumber && Number(b.quantityAvailable) > 0
                 );
                 if (otherPartInSameLoc) {
-                    return { 
-                        success: false, 
-                        message: `Storage Location "${resolvedLocation}" is already occupied by Part "${otherPartInSameLoc.partNumber}" (${otherPartInSameLoc.quantityAvailable} units active). Please use a different Location Code or Rack.` 
+                    return {
+                        success: false,
+                        message: `Storage Location "${resolvedLocation}" is already occupied by Part "${otherPartInSameLoc.partNumber}" (${otherPartInSameLoc.quantityAvailable} units active). Please use a different Location Code or Rack.`
                     };
                 }
             }
@@ -1938,16 +1938,16 @@ export const CQAProvider = ({ children }) => {
             }
 
             // 1. Create Inward Log
-            await setDoc(doc(db, 'baan_inward_logs', inwardId), { 
-                ...data, 
-                id: inwardId, 
+            await setDoc(doc(db, 'baan_inward_logs', inwardId), {
+                ...data,
+                id: inwardId,
                 location: resolvedLocation,
                 locationName: locationName || '',
                 locationCode: locationCode || '',
                 batchId,
                 batchNumber: userBatch || batchId,
-                inwardBy: (user?.name || user?.id || 'System'), 
-                timestamp 
+                inwardBy: (user?.name || user?.id || 'System'),
+                timestamp
             });
 
             // 2. Create/Update Batch
@@ -1956,9 +1956,9 @@ export const CQAProvider = ({ children }) => {
             if (batchSnap.exists()) {
                 const existing = batchSnap.data();
                 if (existing.partNumber && existing.partNumber !== data.partNumber) {
-                    return { 
-                        success: false, 
-                        message: `Batch ID "${userBatch || batchId}" already belongs to Part "${existing.partNumber}". Different parts cannot share the same batch.` 
+                    return {
+                        success: false,
+                        message: `Batch ID "${userBatch || batchId}" already belongs to Part "${existing.partNumber}". Different parts cannot share the same batch.`
                     };
                 }
                 await setDoc(batchRef, {
@@ -2049,7 +2049,7 @@ export const CQAProvider = ({ children }) => {
             const timestamp = new Date().toISOString();
             const batch = writeBatch(db);
             const request = store.baan.partRequests[requestId];
-            
+
             if (!request) return { success: false, message: 'Request not found' };
             if (request.status !== 'Requested') return { success: false, message: 'Request is not in Requested status' };
 
@@ -2059,17 +2059,17 @@ export const CQAProvider = ({ children }) => {
                 .sort((a, b) => new Date(a.inwardDate) - new Date(b.inwardDate));
 
             let totalAvailable = availableBatches.reduce((acc, b) => acc + Number(b.quantityAvailable), 0);
-            
+
             if (remainingToFulfill > totalAvailable) {
-                 return { success: false, message: 'Insufficient stock available' };
+                return { success: false, message: 'Insufficient stock available' };
             }
 
             for (const b of availableBatches) {
                 if (remainingToFulfill <= 0) break;
-                
+
                 const take = Math.min(b.quantityAvailable, remainingToFulfill);
                 const batchRef = doc(db, 'baan_batches', b.id);
-                
+
                 batch.update(batchRef, {
                     quantityAvailable: Number(b.quantityAvailable) - take
                 });
@@ -2104,7 +2104,7 @@ export const CQAProvider = ({ children }) => {
                     user: (user?.name || user?.id || 'System'),
                     timestamp
                 });
-                
+
                 remainingToFulfill -= take;
             }
 
@@ -2121,14 +2121,14 @@ export const CQAProvider = ({ children }) => {
             const timestamp = new Date().toISOString();
             const batch = writeBatch(db);
             const request = store.baan.partRequests[requestId];
-            
+
             if (!request) return { success: false, message: 'Request not found' };
-            
+
             const newConsumedQty = Number(request.consumedQty) + Number(consumeQty);
             const newRemainingQty = Number(request.requestedQty) - newConsumedQty;
-            
+
             if (newRemainingQty < 0) {
-                 return { success: false, message: 'Consumption exceeds requested quantity' };
+                return { success: false, message: 'Consumption exceeds requested quantity' };
             }
 
             const isCompleted = newRemainingQty === 0;
@@ -2171,7 +2171,7 @@ export const CQAProvider = ({ children }) => {
             const timestamp = new Date().toISOString();
             const batch = writeBatch(db);
             const request = store.baan.partRequests[requestId];
-            
+
             if (!request) return { success: false, message: 'Request not found' };
 
             const reqQty = Number(request.requestedQty);
@@ -2197,7 +2197,7 @@ export const CQAProvider = ({ children }) => {
             const newPendingQty = reqQty - finalConsumedQty - newReturnedQty;
 
             if (newPendingQty < 0) {
-                 return { success: false, message: 'Invalid return calculation. Pending quantity cannot be negative.' };
+                return { success: false, message: 'Invalid return calculation. Pending quantity cannot be negative.' };
             }
 
             const isCompleted = newPendingQty === 0;
@@ -2216,15 +2216,15 @@ export const CQAProvider = ({ children }) => {
             const partBatches = Object.values(store.baan.batches)
                 .filter(b => b.partNumber === request.partNo)
                 .sort((a, b) => new Date(b.inwardDate) - new Date(a.inwardDate));
-            
+
             if (partBatches.length > 0 && returnQty > 0) {
                 const targetBatch = partBatches[0]; // Restock to newest batch
                 batch.update(doc(db, 'baan_batches', targetBatch.id), {
                     quantityAvailable: Number(targetBatch.quantityAvailable) + Number(returnQty)
                 });
             } else if (returnQty > 0) {
-                 const fallbackBatchId = `BAT-RET-${Date.now()}`;
-                 batch.set(doc(db, 'baan_batches', fallbackBatchId), {
+                const fallbackBatchId = `BAT-RET-${Date.now()}`;
+                batch.set(doc(db, 'baan_batches', fallbackBatchId), {
                     id: fallbackBatchId,
                     partNumber: request.partNo,
                     partName: request.partName,
@@ -2275,7 +2275,7 @@ export const CQAProvider = ({ children }) => {
             devSnap.docs.forEach(docSnap => {
                 const device = docSnap.data();
                 if (!device.history) return;
-                
+
                 device.history.forEach((h, i) => {
                     const remarks = (h.details?.remarks || '').toLowerCase();
                     if (remarks.includes(issueCategory.toLowerCase())) {

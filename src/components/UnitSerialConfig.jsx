@@ -26,7 +26,8 @@ import {
     Download,
     Eye,
     RotateCcw,
-    FileText
+    FileText,
+    Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useCQA } from '../hooks/useCQA';
@@ -34,6 +35,7 @@ import QRScanner from './QRScanner';
 import {
     PROJECT_WORKFLOWS,
     REASON_CATEGORIES,
+    ADMIN_OVERRIDE_OPTIONS,
     normalizeSerialNumbers,
     calculateSkippedStations,
     calculateMovementClassification,
@@ -68,7 +70,8 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
     const [tableFilter, setTableFilter] = useState('ALL');
     const [tableSearch, setTableSearch] = useState('');
 
-    // Destination State
+    // Destination & Admin Override State
+    const [overrideAction, setOverrideAction] = useState('STATUS_COMPLETE');
     const [selectedProject, setSelectedProject] = useState('Device');
     const [selectedTargetStationId, setSelectedTargetStationId] = useState(null);
 
@@ -221,12 +224,14 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
 
     // Calculate Impact for all eligible units
     const impactSummary = useMemo(() => {
-        if (!validationData?.validatedUnits || !selectedTargetStationObj) {
+        if (!validationData?.validatedUnits) {
             return {
                 totalEligible: 0,
                 totalExcluded: 0,
                 classification: 'FORWARD_REROUTE',
                 maxRisk: 'LOW',
+                actionLabel: 'Status Override / Movement',
+                targetDescription: '',
                 skippedStats: {},
                 sampleUnit: null,
                 requiredConfirmPhrase: null
@@ -236,48 +241,87 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
         const eligible = validationData.validatedUnits.filter(u => u.isValid || u.validationStatus === 'READY_TO_MOVE');
         const excluded = validationData.validatedUnits.filter(u => !u.isValid && u.validationStatus !== 'READY_TO_MOVE');
 
-        const targetStId = selectedTargetStationObj.id;
         const skippedMap = {};
         let dominantClassification = 'FORWARD_REROUTE';
         let highestRisk = 'LOW';
-
-        eligible.forEach(u => {
-            const fromStId = u.currentStation || 1;
-            const p = u.project || selectedProject;
-            const skipped = calculateSkippedStations(fromStId, targetStId, p);
-            const classification = calculateMovementClassification(fromStId, targetStId, p, u.status);
-            const risk = calculateRiskLevel(fromStId, targetStId, p, u.status, skipped);
-
-            dominantClassification = classification;
-
-            if (risk === 'HIGH') highestRisk = 'HIGH';
-            else if (risk === 'MEDIUM' && highestRisk !== 'HIGH') highestRisk = 'MEDIUM';
-
-            skipped.forEach(s => {
-                skippedMap[s.stationName] = (skippedMap[s.stationName] || 0) + 1;
-            });
-        });
-
+        let actionLabel = 'Complete';
+        let targetDescription = '';
         let requiredPhrase = null;
-        if (selectedTargetStationObj.type === 'TERMINAL_FG') requiredPhrase = 'MOVE TO FG';
-        else if (selectedTargetStationObj.type === 'TERMINAL_SCRAP') requiredPhrase = (selectedProject === 'Device') ? 'SCRAP' : 'REJECT';
-        else if (dominantClassification === 'ADMIN_REOPEN') requiredPhrase = 'REOPEN';
+
+        if (overrideAction === 'STATUS_COMPLETE') {
+            dominantClassification = 'ADMIN_STATUS_COMPLETE';
+            actionLabel = 'Complete (Finished Goods)';
+            targetDescription = 'Mark SN as completed directly without requiring remaining stations. Removes unit from active shop floor WIP.';
+            highestRisk = eligible.some(u => u.status === 'Scrap' || u.status === 'Reject') ? 'HIGH' : 'LOW';
+        } else if (overrideAction === 'STATUS_REJECTED') {
+            dominantClassification = 'ADMIN_STATUS_REJECTED';
+            actionLabel = 'Rejected (Halt Production)';
+            targetDescription = 'Mark SN as rejected immediately from current station. Halts further normal production movement.';
+            highestRisk = 'HIGH';
+            requiredPhrase = 'REJECT';
+        } else if (overrideAction === 'STATUS_SCRAPPED') {
+            dominantClassification = 'ADMIN_STATUS_SCRAPPED';
+            actionLabel = 'Scrapped (Condemned)';
+            targetDescription = 'Condemn and permanently lock SN as scrapped from current station. Halts further production processing.';
+            highestRisk = 'HIGH';
+            requiredPhrase = 'SCRAP';
+        } else if (overrideAction === 'MOVE_NEXT') {
+            dominantClassification = 'FORWARD_REROUTE';
+            actionLabel = 'Move to Next Station';
+            targetDescription = 'Advance each SN forward to its next sequential workflow station.';
+            highestRisk = 'LOW';
+        } else if (overrideAction === 'MOVE_PREV') {
+            dominantClassification = 'BACKWARD_RETURN';
+            actionLabel = 'Move to Previous Station';
+            targetDescription = 'Return each SN backward to its previous station for rework, re-test, or correction.';
+            highestRisk = 'MEDIUM';
+        } else {
+            // STATION_DIRECT
+            actionLabel = selectedTargetStationObj ? `Move to ${selectedTargetStationObj.name}` : 'Select Target Station';
+            targetDescription = selectedTargetStationObj ? `Target Station: ${selectedTargetStationObj.name} (Station ${selectedTargetStationObj.id})` : 'Select station from workflow grid';
+
+            if (selectedTargetStationObj) {
+                const targetStId = selectedTargetStationObj.id;
+                eligible.forEach(u => {
+                    const fromStId = u.currentStation || 1;
+                    const p = u.project || selectedProject;
+                    const skipped = calculateSkippedStations(fromStId, targetStId, p);
+                    const classification = calculateMovementClassification(fromStId, targetStId, p, u.status);
+                    const risk = calculateRiskLevel(fromStId, targetStId, p, u.status, skipped);
+
+                    dominantClassification = classification;
+
+                    if (risk === 'HIGH') highestRisk = 'HIGH';
+                    else if (risk === 'MEDIUM' && highestRisk !== 'HIGH') highestRisk = 'MEDIUM';
+
+                    skipped.forEach(s => {
+                        skippedMap[s.stationName] = (skippedMap[s.stationName] || 0) + 1;
+                    });
+                });
+
+                if (selectedTargetStationObj.type === 'TERMINAL_FG') requiredPhrase = 'MOVE TO FG';
+                else if (selectedTargetStationObj.type === 'TERMINAL_SCRAP') requiredPhrase = (selectedProject === 'Device') ? 'SCRAP' : 'REJECT';
+                else if (dominantClassification === 'ADMIN_REOPEN') requiredPhrase = 'REOPEN';
+            }
+        }
 
         return {
             totalEligible: eligible.length,
             totalExcluded: excluded.length,
             classification: dominantClassification,
+            actionLabel,
+            targetDescription,
             maxRisk: highestRisk,
             skippedStats: skippedMap,
             sampleUnit: eligible[0] || null,
             requiredConfirmPhrase: requiredPhrase
         };
-    }, [validationData, selectedTargetStationObj, selectedProject]);
+    }, [validationData, overrideAction, selectedTargetStationObj, selectedProject]);
 
-    // ─── EXECUTE MOVEMENT ───
+    // ─── EXECUTE MOVEMENT OR STATUS OVERRIDE ───
     const handleExecuteMovement = async () => {
-        if (!selectedTargetStationObj) {
-            alert('Please choose a destination station.');
+        if (overrideAction === 'STATION_DIRECT' && !selectedTargetStationObj) {
+            alert('Please choose a destination station from the grid.');
             return;
         }
 
@@ -286,18 +330,18 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
             return;
         }
 
-        if (reasonCategory === 'Other' && !remarks.trim()) {
-            alert('Remarks are mandatory when reason is "Other".');
+        if ((reasonCategory === 'Other' || impactSummary.maxRisk === 'HIGH') && !remarks.trim()) {
+            alert('Remarks / Authorization Details are mandatory for this operation.');
             return;
         }
 
         if (impactSummary.maxRisk === 'MEDIUM' && !skippedCheckbox) {
-            alert('Please check the confirmation box acknowledging skipped stations.');
+            alert('Please check the confirmation box acknowledging this action.');
             return;
         }
 
         if (impactSummary.requiredConfirmPhrase && typedConfirmInput.trim().toUpperCase() !== impactSummary.requiredConfirmPhrase.toUpperCase()) {
-            alert(`Please type "${impactSummary.requiredConfirmPhrase}" to confirm this high-risk movement.`);
+            alert(`Please type "${impactSummary.requiredConfirmPhrase}" to confirm this high-impact override.`);
             return;
         }
 
@@ -307,8 +351,9 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
         try {
             const res = await executeAdminMovement({
                 units: validationData.validatedUnits,
-                targetStationId: selectedTargetStationObj.id,
-                targetStationName: selectedTargetStationObj.name,
+                actionType: overrideAction,
+                targetStationId: selectedTargetStationObj?.id || null,
+                targetStationName: selectedTargetStationObj?.name || impactSummary.actionLabel,
                 reasonCategory,
                 reason: selectedReason,
                 remarks,
@@ -351,28 +396,35 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
     const handleExportReport = () => {
         if (!executionReport) return;
         const rows = [
-            ['Movement ID', executionReport.movementId],
-            ['Status', executionReport.status],
-            ['Target Station', selectedTargetStationObj?.name || ''],
+            ['Transaction ID', executionReport.movementId],
+            ['Execution Status', executionReport.status],
+            ['Action Type', impactSummary.actionLabel],
+            ['Target Destination / Status', selectedTargetStationObj?.name || impactSummary.targetDescription],
             ['Reason Category', reasonCategory],
             ['Reason', selectedReason],
             ['Remarks', remarks],
             ['Success Count', executionReport.success],
             ['Failed Count', executionReport.failed],
             [],
-            ['Serial Number', 'Status', 'Details']
+            ['Serial Number', 'Result', 'Station Transition', 'Status Transition', 'Details']
         ];
 
         (executionReport.successUnits || []).forEach(u => {
-            rows.push([u.serialNumber, 'SUCCESS', `Moved from ${u.fromStation} to ${u.toStation}`]);
+            rows.push([
+                u.serialNumber,
+                'SUCCESS',
+                `${u.fromStation || 'None'} -> ${u.toStation || 'None'}`,
+                `${u.fromStatus || 'Processing'} -> ${u.toStatus || 'Completed'}`,
+                'Applied successfully'
+            ]);
         });
         (executionReport.failedUnits || []).forEach(u => {
-            rows.push([u.serialNumber, 'FAILED', u.error || 'Execution failed']);
+            rows.push([u.serialNumber, 'FAILED', '-', '-', u.error || 'Execution failed']);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Movement_Report');
+        XLSX.utils.book_append_sheet(wb, ws, 'Override_Report');
         XLSX.writeFile(wb, `${executionReport.movementId}_Report.xlsx`);
     };
 
@@ -382,6 +434,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
         setSingleInput('');
         setBulkInput('');
         setValidationData(null);
+        setOverrideAction('STATUS_COMPLETE');
         setSelectedTargetStationId(null);
         setReasonCategory('Engineering');
         setSelectedReason(REASON_CATEGORIES['Engineering'][0]);
@@ -759,88 +812,164 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                         </div>
                     )}
 
-                    {/* ─── STEP 3: CHOOSE DESTINATION ─── */}
+                    {/* ─── STEP 3: CHOOSE ADMIN OVERRIDE ACTION OR DESTINATION ─── */}
                     {wizardStep === 3 && (
                         <div className="card animate-fade-in">
                             <div className="card-header">
                                 <div>
-                                    <h3 className="font-bold" style={{ fontSize: '1rem' }}>Step 3 — Choose Destination Station</h3>
-                                    <p className="text-xs text-muted">Select target workflow station configured for this production line</p>
+                                    <h3 className="font-bold" style={{ fontSize: '1rem' }}>Step 3 — Select Admin Override Action or Destination</h3>
+                                    <p className="text-xs text-muted">Admin Override: Directly change unit status (Complete, Rejected, Scrapped) regardless of station, or route station movements.</p>
                                 </div>
                             </div>
 
                             <div className="card-body" style={{ padding: '1.5rem' }}>
-                                {/* Project selector */}
-                                <div style={{ maxWidth: 360, marginBottom: '1.5rem' }}>
-                                    <label className="text-xs font-bold uppercase tracking-wide text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
-                                        Project Workflow
-                                    </label>
-                                    <select
-                                        value={selectedProject}
-                                        onChange={e => {
-                                            setSelectedProject(e.target.value);
-                                            setSelectedTargetStationId(null);
-                                        }}
-                                        style={{ height: 44, fontSize: '0.9375rem' }}
-                                    >
-                                        <option value="Device">Device Workflow</option>
-                                        <option value="Peripherals">Peripherals Workflow</option>
-                                        <option value="Inward QC">Inward QC Workflow</option>
-                                    </select>
-                                </div>
-
-                                {/* Destination Station Grid */}
+                                {/* Admin Override Options Cards */}
                                 <label className="text-xs font-bold uppercase tracking-wide text-muted" style={{ display: 'block', marginBottom: '0.75rem' }}>
-                                    Select Target Station ({selectedProject})
+                                    Admin Override Options
                                 </label>
-                                <div className="grid md-grid-2 md-grid-4 gap-3" style={{ marginBottom: '1.5rem' }}>
-                                    {targetStationOptions.map(st => {
-                                        const isSelected = selectedTargetStationId === st.id;
-                                        const isTerminal = st.type === 'TERMINAL_FG' || st.type === 'TERMINAL_SCRAP';
-
+                                <div className="grid md-grid-2 md-grid-3 gap-3" style={{ marginBottom: '1.75rem' }}>
+                                    {ADMIN_OVERRIDE_OPTIONS.map(opt => {
+                                        const isSelected = overrideAction === opt.id;
                                         return (
                                             <div
-                                                key={st.id}
+                                                key={opt.id}
                                                 className={`card clickable ${isSelected ? 'active' : ''}`}
                                                 style={{
-                                                    padding: '1rem',
-                                                    border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                                                    padding: '1.1rem',
+                                                    border: isSelected ? `2px solid ${opt.color}` : '1px solid var(--border)',
                                                     background: isSelected ? 'var(--primary-alpha)' : 'var(--bg-card)',
                                                     cursor: 'pointer',
                                                     borderRadius: 'var(--radius-md)',
-                                                    transition: 'all 0.15s'
+                                                    transition: 'all 0.15s',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'space-between'
                                                 }}
-                                                onClick={() => setSelectedTargetStationId(st.id)}
+                                                onClick={() => {
+                                                    setOverrideAction(opt.id);
+                                                    if (opt.id !== 'STATION_DIRECT') {
+                                                        setSelectedTargetStationId(null);
+                                                    }
+                                                }}
                                             >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                                                    <span className="text-xs font-extrabold text-mono" style={{ color: 'var(--text-muted)' }}>
-                                                        STATION {st.id}
-                                                    </span>
-                                                    {isTerminal && (
-                                                        <span className="status-pill warning" style={{ fontSize: '0.5625rem', padding: '1px 5px' }}>
-                                                            TERMINAL
+                                                <div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                                        <span className="font-bold text-sm" style={{ color: isSelected ? opt.color : 'var(--text-main)' }}>
+                                                            {opt.name}
                                                         </span>
-                                                    )}
+                                                        <span
+                                                            className={`status-pill ${opt.badgeClass}`}
+                                                            style={{ fontSize: '0.625rem', padding: '1px 6px' }}
+                                                        >
+                                                            {opt.badge}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-muted" style={{ margin: 0, lineHeight: 1.4 }}>
+                                                        {opt.description}
+                                                    </p>
                                                 </div>
-                                                <div className="font-bold text-sm" style={{ color: isSelected ? 'var(--primary)' : 'var(--text-main)' }}>
-                                                    {getDisplayName('stations', st.name) || st.name}
+                                                <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <span style={{
+                                                        width: 8, height: 8, borderRadius: '50%',
+                                                        background: isSelected ? opt.color : 'var(--border)'
+                                                    }} />
+                                                    <span className="text-xs font-semibold" style={{ color: isSelected ? opt.color : 'var(--text-muted)' }}>
+                                                        {isSelected ? 'Selected' : 'Select Option'}
+                                                    </span>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
 
-                                {selectedTargetStationObj && (
-                                    <div style={{
-                                        background: 'var(--bg-input)', padding: '1rem',
-                                        borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)'
+                                {/* When STATION_DIRECT is chosen, show the project & station picker */}
+                                {overrideAction === 'STATION_DIRECT' && (
+                                    <div className="animate-fade-in" style={{
+                                        padding: '1.25rem',
+                                        background: 'var(--bg-input)',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--border-light)',
+                                        marginBottom: '1.5rem'
                                     }}>
-                                        <div className="text-xs font-bold uppercase text-muted" style={{ marginBottom: '0.25rem' }}>Target Destination Selected:</div>
-                                        <div className="font-extrabold text-sm" style={{ color: 'var(--primary)' }}>
-                                            {selectedTargetStationObj.name} (Station ID: {selectedTargetStationObj.id})
+                                        <div style={{ maxWidth: 360, marginBottom: '1.25rem' }}>
+                                            <label className="text-xs font-bold uppercase tracking-wide text-muted" style={{ display: 'block', marginBottom: '0.5rem' }}>
+                                                Select Workflow
+                                            </label>
+                                            <select
+                                                value={selectedProject}
+                                                onChange={e => {
+                                                    setSelectedProject(e.target.value);
+                                                    setSelectedTargetStationId(null);
+                                                }}
+                                                style={{ height: 42, fontSize: '0.875rem' }}
+                                            >
+                                                <option value="Device">Device Workflow</option>
+                                                <option value="Peripherals">Peripherals Workflow</option>
+                                                <option value="Inward QC">Inward QC Workflow</option>
+                                            </select>
+                                        </div>
+
+                                        <label className="text-xs font-bold uppercase tracking-wide text-muted" style={{ display: 'block', marginBottom: '0.75rem' }}>
+                                            Choose Target Destination Station
+                                        </label>
+                                        <div className="grid md-grid-2 md-grid-4 gap-3">
+                                            {targetStationOptions.map(st => {
+                                                const isSelected = selectedTargetStationId === st.id;
+                                                const isTerminal = st.type === 'TERMINAL_FG' || st.type === 'TERMINAL_SCRAP';
+
+                                                return (
+                                                    <div
+                                                        key={st.id}
+                                                        className={`card clickable ${isSelected ? 'active' : ''}`}
+                                                        style={{
+                                                            padding: '0.85rem',
+                                                            border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                                                            background: isSelected ? 'var(--primary-alpha)' : 'var(--bg-card)',
+                                                            cursor: 'pointer',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            transition: 'all 0.15s'
+                                                        }}
+                                                        onClick={() => setSelectedTargetStationId(st.id)}
+                                                    >
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                                                            <span className="text-xs font-extrabold text-mono" style={{ color: 'var(--text-muted)' }}>
+                                                                STATION {st.id}
+                                                            </span>
+                                                            {isTerminal && (
+                                                                <span className="status-pill warning" style={{ fontSize: '0.5625rem', padding: '1px 5px' }}>
+                                                                    TERMINAL
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="font-bold text-xs" style={{ color: isSelected ? 'var(--primary)' : 'var(--text-main)' }}>
+                                                            {getDisplayName('stations', st.name) || st.name}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Selected Action Summary Preview */}
+                                <div style={{
+                                    background: 'var(--bg-input)', padding: '1rem 1.25rem',
+                                    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)',
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem'
+                                }}>
+                                    <div>
+                                        <div className="text-xs font-bold uppercase text-muted" style={{ marginBottom: '0.2rem' }}>Selected Action:</div>
+                                        <div className="font-extrabold text-sm" style={{ color: 'var(--primary)' }}>
+                                            {impactSummary.actionLabel}
+                                        </div>
+                                        <div className="text-xs text-muted" style={{ marginTop: '0.25rem' }}>
+                                            {impactSummary.targetDescription}
+                                        </div>
+                                    </div>
+                                    <span className={`risk-badge ${impactSummary.maxRisk.toLowerCase()}`}>
+                                        {impactSummary.maxRisk} RISK
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="card-footer" style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 1.5rem' }}>
@@ -850,7 +979,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                 <button
                                     className="btn btn-primary"
                                     onClick={() => setWizardStep(4)}
-                                    disabled={!selectedTargetStationId}
+                                    disabled={overrideAction === 'STATION_DIRECT' && !selectedTargetStationId}
                                     style={{ height: 44, padding: '0 1.5rem' }}
                                 >
                                     Continue to Reason <ArrowRight size={16} />
@@ -950,25 +1079,42 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                             </div>
 
                             <div className="card-body" style={{ padding: '1.5rem' }}>
-                                {/* Movement Classification Header */}
+                                {/* Movement / Override Classification Header */}
                                 <div style={{
                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                     padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)',
                                     background: 'var(--bg-input)', border: '1px solid var(--border-light)',
-                                    marginBottom: '1.5rem'
+                                    marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem'
                                 }}>
                                     <div>
-                                        <span className="text-xs font-bold text-muted uppercase">Movement Classification:</span>
+                                        <span className="text-xs font-bold text-muted uppercase">Action Classification:</span>
                                         <div className="font-extrabold text-base" style={{ color: 'var(--primary)', marginTop: 2 }}>
-                                            {impactSummary.classification.replace(/_/g, ' ')}
+                                            {impactSummary.actionLabel}
                                         </div>
                                     </div>
                                     <div style={{ textAlign: 'right' }}>
-                                        <span className="text-xs font-bold text-muted uppercase">Destination:</span>
+                                        <span className="text-xs font-bold text-muted uppercase">Target Disposition:</span>
                                         <div className="font-extrabold text-base" style={{ color: 'var(--text-main)', marginTop: 2 }}>
-                                            {selectedTargetStationObj?.name}
+                                            {overrideAction === 'STATION_DIRECT' ? selectedTargetStationObj?.name : impactSummary.targetDescription}
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Units to be Updated Preview */}
+                                <div style={{
+                                    padding: '0.85rem 1.25rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border)',
+                                    marginBottom: '1.5rem',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}>
+                                    <span className="text-xs font-bold text-muted uppercase">Authorized Admin:</span>
+                                    <span className="font-bold text-xs" style={{ color: 'var(--primary)' }}>
+                                        {user?.name || user?.id || 'Admin'} ({user?.role || 'Admin'})
+                                    </span>
                                 </div>
 
                                 {/* Skipped Stations Summary */}
@@ -1014,7 +1160,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                 </div>
 
                                 {/* Confirmation Section */}
-                                {impactSummary.maxRisk === 'MEDIUM' && (
+                                {(impactSummary.maxRisk === 'MEDIUM' || overrideAction === 'STATUS_COMPLETE') && (
                                     <div style={{
                                         padding: '1rem', background: 'var(--warning-bg)',
                                         borderRadius: 'var(--radius-md)', border: '1px solid var(--warning)',
@@ -1028,7 +1174,9 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                             style={{ width: 18, height: 18, cursor: 'pointer' }}
                                         />
                                         <label htmlFor="confirmSkipped" style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-main)', cursor: 'pointer' }}>
-                                            I confirm that the skipped stations and movement route are authorized.
+                                            {overrideAction === 'STATUS_COMPLETE'
+                                                ? 'I confirm that the selected unit(s) are authorized to be marked as Complete without passing remaining stations.'
+                                                : 'I confirm that the skipped stations and movement route are authorized.'}
                                         </label>
                                     </div>
                                 )}
@@ -1042,11 +1190,11 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                                             <AlertTriangle size={16} color="var(--error)" />
                                             <span className="font-bold text-sm" style={{ color: 'var(--error)' }}>
-                                                High Risk Action — Typed Confirmation Required
+                                                High Impact Action — Typed Confirmation Required
                                             </span>
                                         </div>
                                         <p className="text-xs text-muted" style={{ marginBottom: '0.75rem' }}>
-                                            To confirm this major lifecycle transition, please type <strong>{impactSummary.requiredConfirmPhrase}</strong> below:
+                                            To confirm this status override ({impactSummary.actionLabel}), please type <strong>{impactSummary.requiredConfirmPhrase}</strong> below:
                                         </p>
                                         <input
                                             type="text"
@@ -1143,9 +1291,9 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                         </div>
                                     </div>
                                     <div className="card" style={{ padding: '0.75rem 1rem', borderLeft: '4px solid var(--primary)' }}>
-                                        <span className="text-xs font-bold text-muted uppercase">Target Station</span>
+                                        <span className="text-xs font-bold text-muted uppercase">Target Disposition</span>
                                         <div className="text-sm font-extrabold text-mono" style={{ color: 'var(--primary)', marginTop: 4 }}>
-                                            {selectedTargetStationObj?.name}
+                                            {selectedTargetStationObj?.name || impactSummary.actionLabel}
                                         </div>
                                     </div>
                                 </div>
@@ -1183,7 +1331,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                     <Clock size={16} /> View Audit History
                                 </button>
                                 <button className="btn btn-primary" onClick={handleResetWizard}>
-                                    <RefreshCw size={16} /> Start New Movement
+                                    <RefreshCw size={16} /> Start New Override / Movement
                                 </button>
                             </div>
                         </div>
