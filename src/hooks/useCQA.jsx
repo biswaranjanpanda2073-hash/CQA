@@ -995,8 +995,9 @@ export const CQAProvider = ({ children }) => {
 
     const executeAdminMovement = useCallback(async ({
         units,
-        targetStationId,
-        targetStationName,
+        actionType = 'STATION_DIRECT',
+        targetStationId = null,
+        targetStationName = null,
         reasonCategory,
         reason,
         remarks,
@@ -1007,7 +1008,10 @@ export const CQAProvider = ({ children }) => {
             throw new Error('Unauthorized: Admin or Super Admin privilege required.');
         }
 
-        if (!targetStationId || !targetStationName) {
+        const isStatusOverride = actionType === 'STATUS_COMPLETE' || actionType === 'STATUS_REJECTED' || actionType === 'STATUS_SCRAPPED';
+        const isRelativeMove = actionType === 'MOVE_NEXT' || actionType === 'MOVE_PREV';
+
+        if (!isStatusOverride && !isRelativeMove && (!targetStationId || !targetStationName)) {
             throw new Error('Target destination station is required.');
         }
 
@@ -1020,7 +1024,7 @@ export const CQAProvider = ({ children }) => {
         const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
         const movementId = `MOVE-${dateStr}-${randomSuffix}`;
 
-        const targetStId = Number(targetStationId);
+        const targetStId = targetStationId ? Number(targetStationId) : null;
         const eligibleUnits = units.filter(u => u.isValid || u.validationStatus === 'READY_TO_MOVE');
         if (eligibleUnits.length === 0) {
             throw new Error('No eligible units selected for movement.');
@@ -1028,9 +1032,16 @@ export const CQAProvider = ({ children }) => {
 
         // 1 & 2. Pre-create Movement Audit Record with status 'PROCESSING'
         const movementDocRef = doc(db, 'admin_movements', movementId);
+        const resolvedType = isStatusOverride
+            ? `ADMIN_${actionType}`
+            : isRelativeMove
+            ? `ADMIN_${actionType}`
+            : calculateMovementClassification(1, targetStId || 1, 'Device', 'Processing');
+
         const initialMovementDoc = {
             movementId,
-            type: calculateMovementClassification(1, targetStId, 'Device', 'Processing'),
+            type: resolvedType,
+            actionType: actionType || 'STATION_DIRECT',
             status: 'PROCESSING',
             createdAt: timestamp,
             startedAt: timestamp,
@@ -1040,7 +1051,7 @@ export const CQAProvider = ({ children }) => {
                 role: user.role || 'Admin'
             },
             targetStationId: targetStId,
-            targetStationName,
+            targetStationName: targetStationName || (actionType === 'STATUS_COMPLETE' ? 'Completed (FG)' : actionType === 'STATUS_REJECTED' ? 'Rejected' : actionType === 'STATUS_SCRAPPED' ? 'Scrapped' : actionType),
             reasonCategory,
             reason,
             remarks: remarks || '',
@@ -1102,7 +1113,7 @@ export const CQAProvider = ({ children }) => {
 
                 // Stale-state prevention
                 const expectedStation = unitItem.currentStation;
-                if (expectedStation !== undefined && expectedStation !== null && fresh.currentStation !== expectedStation) {
+                if (!isStatusOverride && expectedStation !== undefined && expectedStation !== null && fresh.currentStation !== expectedStation) {
                     chunkFailList.push({
                         serialNumber: cid,
                         error: `Stale State: Unit station changed to ${fresh.stationName || fresh.currentStation} during operation.`
@@ -1112,46 +1123,115 @@ export const CQAProvider = ({ children }) => {
 
                 const fromStationId = fresh.currentStation || 1;
                 const fromStationName = fresh.stationName || 'RECEIVING';
+                const fromStatus = fresh.status || 'Processing';
                 const unitProject = fresh.project || unitItem.project || 'Device';
-                const skipped = calculateSkippedStations(fromStationId, targetStId, unitProject);
-                const classification = calculateMovementClassification(fromStationId, targetStId, unitProject, fresh.status);
+                const workflow = PROJECT_WORKFLOWS[unitProject] || PROJECT_WORKFLOWS['Device'];
 
+                let skipped = [];
+                let classification = 'ADMIN_REROUTE';
                 let newStatus = 'Processing';
                 let cycleEndDate = null;
                 let lockDate = null;
                 let nextStationId = targetStId;
                 let nextStationName = targetStationName;
+                let movementResult = 'ADMIN_REROUTE';
 
-                const workflow = PROJECT_WORKFLOWS[unitProject] || PROJECT_WORKFLOWS['Device'];
-                const targetStObj = workflow.find(s => s.id === targetStId);
-
-                if (targetStObj?.type === 'TERMINAL_FG') {
+                if (actionType === 'STATUS_COMPLETE') {
+                    // Mark completed without requiring remaining stations; preserve tests untouched
                     newStatus = 'Completed';
                     cycleEndDate = timestamp;
                     nextStationId = null;
-                    nextStationName = 'FG (DONE)';
-                } else if (targetStObj?.type === 'TERMINAL_SCRAP') {
-                    newStatus = (unitProject === 'Device') ? 'Scrap' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'Reject');
+                    nextStationName = 'FG (Admin Override)';
+                    movementResult = 'STATUS_OVERRIDE_COMPLETE';
+                    classification = 'ADMIN_STATUS_COMPLETE';
+                } else if (actionType === 'STATUS_REJECTED') {
+                    // Mark rejected directly from any station; halt normal production
+                    newStatus = (unitProject === 'Device' || unitProject === 'Peripherals' || unitProject === 'Inward QC') ? 'Reject' : 'Rejected';
                     lockDate = timestamp;
                     nextStationId = null;
-                    nextStationName = (unitProject === 'Device') ? 'SCRAP (LOCKED)' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'REJECTED');
-                }
+                    nextStationName = 'REJECTED (Admin Override)';
+                    movementResult = 'STATUS_OVERRIDE_REJECTED';
+                    classification = 'ADMIN_STATUS_REJECTED';
+                } else if (actionType === 'STATUS_SCRAPPED') {
+                    // Mark scrapped directly from any station; halt normal production
+                    newStatus = (unitProject === 'Calculator') ? 'SCRAPPED' : 'Scrap';
+                    lockDate = timestamp;
+                    nextStationId = null;
+                    nextStationName = 'SCRAP (Admin Override)';
+                    movementResult = 'STATUS_OVERRIDE_SCRAPPED';
+                    classification = 'ADMIN_STATUS_SCRAPPED';
+                } else if (actionType === 'MOVE_NEXT') {
+                    const curIdx = workflow.findIndex(s => s.id === fromStationId);
+                    if (curIdx === -1 || curIdx >= workflow.length - 1) {
+                        chunkFailList.push({ serialNumber: cid, error: 'Unit is already at final workflow station. Use Complete status override instead.' });
+                        continue;
+                    }
+                    const nextSt = workflow[curIdx + 1];
+                    nextStationId = nextSt.id;
+                    nextStationName = nextSt.name;
+                    classification = 'FORWARD_REROUTE';
+                    movementResult = 'ADMIN_MOVE_NEXT';
 
-                let movementResult = 'ADMIN_REROUTE';
-                if (classification === 'BACKWARD_RETURN') movementResult = 'ADMIN_RETURN';
-                else if (classification === 'TERMINAL_MOVEMENT') movementResult = 'ADMIN_TERMINAL_MOVEMENT';
-                else if (classification === 'ADMIN_REOPEN') movementResult = 'ADMIN_REOPEN';
+                    if (nextSt.type === 'TERMINAL_FG') {
+                        newStatus = 'Completed';
+                        cycleEndDate = timestamp;
+                        nextStationId = null;
+                    } else if (nextSt.type === 'TERMINAL_SCRAP') {
+                        newStatus = (unitProject === 'Device') ? 'Scrap' : 'Reject';
+                        lockDate = timestamp;
+                        nextStationId = null;
+                    } else {
+                        newStatus = 'Processing';
+                    }
+                } else if (actionType === 'MOVE_PREV') {
+                    const curIdx = workflow.findIndex(s => s.id === fromStationId);
+                    if (curIdx <= 0) {
+                        chunkFailList.push({ serialNumber: cid, error: 'Unit is already at Receiving (first station).' });
+                        continue;
+                    }
+                    const prevSt = workflow[curIdx - 1];
+                    nextStationId = prevSt.id;
+                    nextStationName = prevSt.name;
+                    classification = 'BACKWARD_RETURN';
+                    movementResult = 'ADMIN_MOVE_PREV';
+                    newStatus = 'Processing';
+                } else {
+                    // Standard direct target station
+                    skipped = calculateSkippedStations(fromStationId, targetStId, unitProject);
+                    classification = calculateMovementClassification(fromStationId, targetStId, unitProject, fresh.status);
+                    const targetStObj = workflow.find(s => s.id === targetStId);
+
+                    if (targetStObj?.type === 'TERMINAL_FG') {
+                        newStatus = 'Completed';
+                        cycleEndDate = timestamp;
+                        nextStationId = null;
+                        nextStationName = 'FG (DONE)';
+                    } else if (targetStObj?.type === 'TERMINAL_SCRAP') {
+                        newStatus = (unitProject === 'Device') ? 'Scrap' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'Reject');
+                        lockDate = timestamp;
+                        nextStationId = null;
+                        nextStationName = (unitProject === 'Device') ? 'SCRAP (LOCKED)' : (unitProject === 'Calculator' ? 'SCRAPPED' : 'REJECTED');
+                    } else {
+                        newStatus = 'Processing';
+                    }
+
+                    if (classification === 'BACKWARD_RETURN') movementResult = 'ADMIN_RETURN';
+                    else if (classification === 'TERMINAL_MOVEMENT') movementResult = 'ADMIN_TERMINAL_MOVEMENT';
+                    else if (classification === 'ADMIN_REOPEN') movementResult = 'ADMIN_REOPEN';
+                }
 
                 const historyEntry = {
                     station: `ADMIN OVERRIDE: -> ${nextStationName}`,
-                    stationId: targetStId,
+                    stationId: nextStationId,
                     result: movementResult,
                     timestamp,
                     movementId,
                     fromStationId,
                     fromStationName,
-                    toStationId: targetStId,
+                    toStationId: nextStationId,
                     toStationName: nextStationName,
+                    previousStatus: fromStatus,
+                    newStatus,
                     skippedStations: skipped,
                     reasonCategory,
                     reason,
@@ -1163,6 +1243,9 @@ export const CQAProvider = ({ children }) => {
                     project: unitProject,
                     details: {
                         movementType: classification,
+                        actionType: actionType || 'STATION_DIRECT',
+                        previousStatus: fromStatus,
+                        newStatus,
                         previousStation: fromStationName,
                         targetStation: nextStationName,
                         skippedStations: skipped.map(s => s.stationName),
@@ -1178,6 +1261,7 @@ export const CQAProvider = ({ children }) => {
                     stationName: nextStationName,
                     status: newStatus,
                     updatedAt: timestamp,
+                    // Preserve all historical test records and movement history
                     history: [...(Array.isArray(fresh.history) ? fresh.history : []), historyEntry]
                 };
 
@@ -1186,7 +1270,17 @@ export const CQAProvider = ({ children }) => {
 
                 const devRef = doc(db, 'devices', cid);
                 batch.set(devRef, JSON.parse(JSON.stringify(updatedDevice)));
-                chunkSuccessList.push({ id: cid, serialNumber: cid, fromStation: fromStationName, toStation: nextStationName });
+                chunkSuccessList.push({
+                    id: cid,
+                    serialNumber: cid,
+                    project: unitProject,
+                    fromStation: fromStationName,
+                    fromStationId,
+                    toStation: nextStationName,
+                    toStationId: nextStationId,
+                    fromStatus,
+                    toStatus: newStatus
+                });
             }
 
             try {
@@ -1195,6 +1289,22 @@ export const CQAProvider = ({ children }) => {
                 results.successUnits.push(...chunkSuccessList);
                 results.failed += chunkFailList.length;
                 results.failedUnits.push(...chunkFailList);
+
+                // Write immutable audit log record for every overridden unit
+                await Promise.all(chunkSuccessList.map(item =>
+                    logAdminAction({
+                        actor: user,
+                        action: isStatusOverride ? AUDIT_ACTIONS.SERIAL_STATUS_OVERRIDE : AUDIT_ACTIONS.SERIAL_MOVEMENT_OVERRIDE,
+                        entity: 'device',
+                        entityId: item.serialNumber,
+                        project: item.project || 'Device',
+                        previousValue: { status: item.fromStatus, station: item.fromStation, stationId: item.fromStationId },
+                        newValue: { status: item.toStatus, station: item.toStation, stationId: item.toStationId },
+                        reason: `${reasonCategory} — ${reason}`,
+                        remarks: remarks || '',
+                        status: 'SUCCESS'
+                    }).catch(auditErr => console.warn(`Audit log write error for ${item.serialNumber}:`, auditErr))
+                ));
             } catch (commitErr) {
                 console.error(`Batch commit error in chunk ${chunkIdx + 1}:`, commitErr);
                 results.failed += chunk.length;
