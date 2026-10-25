@@ -8,19 +8,23 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "release": "release-it"
+    "release": "release-it",
+    "test:rules": "node scripts/test-rules.mjs"
   },
   "dependencies": {
+    "chart.js": "^4.4.1",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "firebase": "^12.9.0",
     "framer-motion": "^12.34.3",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.575.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

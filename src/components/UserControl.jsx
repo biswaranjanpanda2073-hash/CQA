@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     User,
     ShieldCheck,
@@ -43,6 +43,49 @@ const UserControl = ({ user }) => {
             return ['Full System Access — All stations and projects'];
         }
         return user.stations;
+    };
+
+    const [showChangePw, setShowChangePw] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [pwLoading, setPwLoading] = useState(false);
+    const [pwMessage, setPwMessage] = useState({ text: '', type: '' });
+    const { changeOwnPassword } = useCQA();
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        setPwMessage({ text: '', type: '' });
+        if (!currentPassword) {
+            setPwMessage({ text: 'Please enter your current password.', type: 'error' });
+            return;
+        }
+        if (newPassword.length < 8) {
+            setPwMessage({ text: 'New password must be at least 8 characters long.', type: 'error' });
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setPwMessage({ text: 'New passwords do not match.', type: 'error' });
+            return;
+        }
+
+        setPwLoading(true);
+        try {
+            if (changeOwnPassword) {
+                await changeOwnPassword(currentPassword, newPassword);
+                setPwMessage({ text: 'Password changed successfully!', type: 'success' });
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                setTimeout(() => setShowChangePw(false), 2000);
+            } else {
+                setPwMessage({ text: 'Password change service unavailable.', type: 'error' });
+            }
+        } catch (err) {
+            setPwMessage({ text: err.message || 'Failed to change password. Please verify current password.', type: 'error' });
+        } finally {
+            setPwLoading(false);
+        }
     };
 
     return (
@@ -121,25 +164,100 @@ const UserControl = ({ user }) => {
                     </div>
                 </div>
 
-                {/* Actions */}
+                {/* Actions & Change Password */}
                 <div className="card" style={{ gridColumn: '1 / -1' }}>
                     <div className="card-header">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <Activity size={16} color="var(--warning)" />
-                            <span className="text-sm font-bold">Account Actions</span>
+                            <span className="text-sm font-bold">Account Security & Actions</span>
                         </div>
                     </div>
                     <div className="card-body">
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: showChangePw ? '1.5rem' : 0 }}>
+                            <button className="btn btn-primary" onClick={() => setShowChangePw(!showChangePw)}>
+                                <Key size={16} />
+                                {showChangePw ? 'Hide Password Form' : 'Change Password'}
+                            </button>
                             <button className="btn btn-secondary" onClick={handleResetPassword}>
                                 <Lock size={16} />
-                                Request Password Reset
+                                Request Admin Password Reset
                             </button>
                             <button className="btn btn-secondary" onClick={handleDownloadLogs}>
                                 <Download size={16} />
                                 Download Audit Logs
                             </button>
                         </div>
+
+                        {showChangePw && (
+                            <form onSubmit={handleChangePassword} style={{
+                                maxWidth: 440,
+                                padding: '1.25rem',
+                                background: 'var(--bg-input)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-light)',
+                                marginTop: '1rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '1rem'
+                            }}>
+                                <h3 className="font-bold text-sm" style={{ margin: 0 }}>Change Your Password</h3>
+                                
+                                {pwMessage.text && (
+                                    <div style={{
+                                        padding: '0.65rem 0.85rem',
+                                        borderRadius: 'var(--radius-sm)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        background: pwMessage.type === 'success' ? 'var(--success-bg)' : 'var(--error-bg)',
+                                        color: pwMessage.type === 'success' ? 'var(--success)' : 'var(--error)'
+                                    }}>
+                                        {pwMessage.text}
+                                    </div>
+                                )}
+
+                                <div className="input-field">
+                                    <label>Current Password</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        placeholder="Enter current password"
+                                        value={currentPassword}
+                                        onChange={e => setCurrentPassword(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="input-field">
+                                    <label>New Password (min 8 chars)</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        placeholder="Enter new password (min 8 characters)"
+                                        value={newPassword}
+                                        onChange={e => setNewPassword(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="input-field">
+                                    <label>Confirm New Password</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        placeholder="Confirm new password"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                    />
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    <button type="submit" className="btn btn-primary" disabled={pwLoading}>
+                                        {pwLoading ? 'Updating...' : 'Update Password'}
+                                    </button>
+                                    <button type="button" className="btn btn-secondary" onClick={() => setShowChangePw(false)}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        )}
                     </div>
                 </div>
             </div>

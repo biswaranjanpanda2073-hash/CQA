@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import {
     db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
-    ref, uploadBytes, getDownloadURL, uploadString,
+    ref, uploadBytes, getDownloadURL,
     signInWithCustomToken, httpsCallable
 } from '../firebase';
 import {
@@ -14,13 +14,7 @@ import {
 } from '../utils/movementEngine';
 import {
     CALCULATOR_STATIONS,
-    isRepeatSerial,
-    resolveCalcNextStation,
-    validateCalcRouting,
-    generateCalcMovementId,
-    generateScrapInboundId,
-    CALC_SCRAP_ELIGIBLE_FROM,
-    getCalcStationById
+    CALC_SCRAP_ELIGIBLE_FROM
 } from '../utils/calculatorEngine';
 import { hasPermission, PERMISSIONS } from '../utils/rbacEngine';
 import { logAdminAction, AUDIT_ACTIONS } from '../utils/auditLogger';
@@ -59,38 +53,62 @@ export const CQAProvider = ({ children }) => {
         stations: {}
     });
 
+    const [authUser, setAuthUser] = useState(() => auth.currentUser);
+    const [authReady, setAuthReady] = useState(false);
+
+    useEffect(() => {
+        const unsub = auth.onAuthStateChanged((user) => {
+            setAuthUser(user);
+            setAuthReady(true);
+            if (!user) {
+                setLoading(false);
+            }
+        });
+        return () => unsub();
+    }, []);
+
     // ===== SYSTEM CONFIG LISTENER =====
     useEffect(() => {
+        if (!authReady || !authUser) return;
         const unsubscribe = onSnapshot(doc(db, 'settings', 'system_names'), (snapshot) => {
             if (snapshot.exists()) {
                 setSystemNames(snapshot.data());
             }
+            setLoading(false);
+        }, (error) => {
+            console.error("System config error:", error);
+            setLoading(false);
         });
         return () => unsubscribe();
-    }, []);
+    }, [authReady, authUser]);
 
     // ===== MAINTENANCE MODE LISTENER =====
     useEffect(() => {
+        if (!authReady || !authUser) return;
         const unsubscribe = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
             if (snapshot.exists()) {
                 setStore(prev => ({ ...prev, settings: snapshot.data() }));
             }
+        }, (error) => {
+            console.error("Global settings error:", error);
         });
         return () => unsubscribe();
-    }, []);
+    }, [authReady, authUser]);
 
     // ===== CONFIG GOVERNANCE & RBAC LISTENERS =====
     const [customRoles, setCustomRoles] = useState({});
     const [configGov, setConfigGov] = useState({ isBootstrapped: false, dynamicConfigEnabled: false });
 
     useEffect(() => {
+        if (!authReady || !authUser) return;
         const unsubGov = subscribeConfigGovernance((gov) => {
             setConfigGov(gov);
         });
         return () => unsubGov();
-    }, []);
+    }, [authReady, authUser]);
 
     useEffect(() => {
+        if (!authReady || !authUser) return;
         const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
             const rolesMap = {};
             snapshot.forEach(docSnap => {
@@ -101,7 +119,7 @@ export const CQAProvider = ({ children }) => {
             console.warn('[useCQA] Roles listener fallback to defaults:', err);
         });
         return () => unsubRoles();
-    }, []);
+    }, [authReady, authUser]);
 
     const getDisplayName = useCallback((type, id) => {
         if (!id) return id;
@@ -154,24 +172,12 @@ export const CQAProvider = ({ children }) => {
         return 'Device';
     }, []);
 
-    // ===== SYSTEM CONFIG LISTENER (Lightweight) =====
-    useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'settings', 'system_names'), (snapshot) => {
-            if (snapshot.exists()) setSystemNames(snapshot.data());
-            // Signal system ready once core config is loaded
-            setLoading(false);
-        }, (error) => {
-            console.error("System config error:", error);
-            setLoading(false); // Proceed even with defaults if possible
-        });
-        return () => unsubscribe();
-    }, []);
-
     // ===== OPTIMIZED REAL-TIME DEVICES LISTENER =====
     // We only globally sync devices that are currently "Processing". 
     // This reduces the initial load from 3500+ documents down to just the active ~1500, 
     // making the Operation panel completely instantaneous.
     useEffect(() => {
+        if (!authReady || !authUser) return;
         const validStatuses = ['Processing', 'In Progress', 'WIP', 'In-Progress', 'Processing...'];
         const wipQuery = query(devicesCol, where('status', 'in', validStatuses));
 
@@ -184,7 +190,7 @@ export const CQAProvider = ({ children }) => {
         });
 
         return () => unsubscribeWip();
-    }, []);
+    }, [authReady, authUser]);
     // ===== USERS & TICKETS LISTENER (ADMIN) =====
     // Removed: Users and tickets are now lazy-loaded within the Settings/Admin modules
     // to prevent unnecessary document reads for standard operators.
@@ -317,27 +323,9 @@ export const CQAProvider = ({ children }) => {
 
         const projectCategory = getProjectCategory(project);
 
-        // ─── CALCULATOR REFURBISHMENT: TRUSTED CLOUD FUNCTION PROCESSING (with local fallback) ───
+        // ─── CALCULATOR REFURBISHMENT: TRUSTED CLOUD FUNCTION PROCESSING ───
         if (projectCategory === 'Calculator') {
             try {
-                if (!auth.currentUser) {
-                    const saved = localStorage.getItem('cqa_user');
-                    if (saved) {
-                        const u = JSON.parse(saved);
-                        if (u?.id && u?.password) {
-                            try {
-                                const loginFn = httpsCallable(functions, 'loginAndGetToken');
-                                const tokRes = await loginFn({ userId: u.id, password: u.password });
-                                if (tokRes.data?.token) {
-                                    await signInWithCustomToken(auth, tokRes.data.token);
-                                }
-                            } catch (e) {
-                                // Ignore background auth error in local mode
-                            }
-                        }
-                    }
-                }
-
                 const processCalcFn = httpsCallable(functions, 'processCalculatorStation');
                 const callRes = await processCalcFn({
                     serialNumber: cleanId,
@@ -359,218 +347,9 @@ export const CQAProvider = ({ children }) => {
 
                 return callRes.data?.success || true;
             } catch (err) {
-                console.warn("Cloud Function not deployed or unreachable on localhost, falling back to local processor:", err.message);
-                try {
-                    // Local Processor Fallback
-                    const deviceRef = doc(db, 'devices', cleanId);
-                    const snap = await getDoc(deviceRef);
-                    const freshUnit = snap.exists() ? snap.data() : null;
-                    const timestamp = new Date().toISOString();
-                    const movementId = generateCalcMovementId('CALC');
-
-                    let unit = freshUnit ? { ...freshUnit } : {
-                        id: cleanId,
-                        project: 'Calculator',
-                        looper: 1,
-                        history: [],
-                        status: 'Processing',
-                        createdAt: timestamp
-                    };
-
-                    const stationId = station.id;
-                    const stationName = station.name;
-
-                    // Station 1: RECEIVING
-                    if (stationId === 1) {
-                        if (freshUnit) {
-                            if (freshUnit.status === 'Processing') {
-                                alert(`Unit "${cleanId}" is locked at ${freshUnit.stationName || 'current station'}.`);
-                                return false;
-                            }
-                            if (['Completed', 'SCRAPPED', 'Scrap', 'Reject'].includes(freshUnit.status)) {
-                                unit.looper = (unit.looper || 1) + 1;
-                            }
-                        }
-
-                        unit.project = 'Calculator';
-                        unit.status = 'Processing';
-                        unit.details = { ...(details || {}) };
-                        unit.updatedAt = timestamp;
-                        unit.holdStatus = null;
-                        unit.holdStation = null;
-                        unit.holdStationId = null;
-                        unit.holdReason = null;
-                        unit.holdRemarks = null;
-                        unit.holdTimestamp = null;
-                        unit.holdUserId = null;
-                        unit.scrapInboundMovementId = null;
-
-                        const routing = resolveCalcNextStation(1, 'Pass', unit, null);
-                        unit.currentStation = routing.nextStationId;
-                        unit.stationName = routing.nextStationName;
-
-                        const historyEntry = {
-                            station: 'RECEIVING',
-                            stationId: 1,
-                            timestamp,
-                            result: 'COMPLETED',
-                            operator: operator || 'SYSTEM_ADMIN',
-                            looper: unit.looper,
-                            project: 'Calculator',
-                            movementId,
-                            details: { ...(details || {}) }
-                        };
-
-                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-
-                        setStore(prev => {
-                            const nextDevices = { ...prev.devices };
-                            delete nextDevices[cleanId];
-                            return { ...prev, devices: nextDevices };
-                        });
-                        return true;
-                    }
-
-                    // NON-RECEIVING STATIONS
-                    if (!freshUnit) {
-                        alert(`Unit "${cleanId}" not found. Process RECEIVING first.`);
-                        return false;
-                    }
-
-                    if (unit.currentStation !== stationId) {
-                        alert(`Unit is currently at ${unit.stationName} (Station ${unit.currentStation}), not ${stationName} (Station ${stationId}).`);
-                        return false;
-                    }
-
-                    if (unit.holdStatus === 'HOLD') {
-                        alert(`Unit is ON HOLD at ${unit.holdStation}. Unhold before processing.`);
-                        return false;
-                    }
-
-                    if (['SCRAPPED', 'Scrap', 'Reject'].includes(unit.status)) {
-                        alert(`Unit is ${unit.status} (LOCKED).`);
-                        return false;
-                    }
-
-                    // Route to Scrap
-                    if (details?.routeToScrap === true) {
-                        const scrapInboundId = generateScrapInboundId();
-                        const historyEntry = {
-                            station: stationName,
-                            stationId,
-                            timestamp,
-                            result: 'ROUTED_TO_SCRAP',
-                            operator: operator || 'SYSTEM_ADMIN',
-                            looper: unit.looper,
-                            project: 'Calculator',
-                            movementId: scrapInboundId,
-                            fromStationId: stationId,
-                            fromStationName: stationName,
-                            details: {
-                                ...(details || {}),
-                                routedToScrap: true,
-                                scrapRouteReason: details?.textValues?.scrapRouteReason || ''
-                            }
-                        };
-
-                        unit.currentStation = 9;
-                        unit.stationName = 'SCRAP ANALYSIS';
-                        unit.scrapInboundMovementId = scrapInboundId;
-                        unit.updatedAt = timestamp;
-                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                        setStore(prev => {
-                            const nextDevices = { ...prev.devices };
-                            delete nextDevices[cleanId];
-                            return { ...prev, devices: nextDevices };
-                        });
-                        return true;
-                    }
-
-                    // Standard routing
-                    const finalResult = result || decision;
-                    const selectedNextStationId = data?.targetStationId || details?.selectedNextStationId || null;
-                    const routing = resolveCalcNextStation(stationId, finalResult, unit, selectedNextStationId);
-
-                    if (!routing.valid) {
-                        alert(routing.reason || "Invalid station routing.");
-                        return false;
-                    }
-
-                    const historyEntry = {
-                        station: stationName,
-                        stationId,
-                        timestamp,
-                        result: finalResult,
-                        operator: operator || 'SYSTEM_ADMIN',
-                        looper: unit.looper,
-                        project: 'Calculator',
-                        movementId,
-                        details: {
-                            ...(details || {}),
-                            ...(selectedNextStationId ? { selectedNextStationId, selectedNextStationName: getCalcStationById(selectedNextStationId)?.name } : {})
-                        }
-                    };
-
-                    // HOLD
-                    if (routing.isHold) {
-                        unit.holdStatus = 'HOLD';
-                        unit.holdStation = stationName;
-                        unit.holdStationId = stationId;
-                        unit.holdReason = details?.textValues?.holdReason || '';
-                        unit.holdRemarks = details?.textValues?.holdRemarks || details?.textValues?.remarks || '';
-                        unit.holdTimestamp = timestamp;
-                        unit.holdUserId = operator || 'SYSTEM_ADMIN';
-                        unit.updatedAt = timestamp;
-                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                        setStore(prev => {
-                            const nextDevices = { ...prev.devices };
-                            delete nextDevices[cleanId];
-                            return { ...prev, devices: nextDevices };
-                        });
-                        return true;
-                    }
-
-                    // MOVE TO FG (Completed)
-                    if (routing.nextStationId === 10) {
-                        unit.status = 'Completed';
-                        unit.currentStation = 10;
-                        unit.stationName = 'MOVE TO FG';
-                        unit.cycleEndDate = timestamp;
-                        unit.updatedAt = timestamp;
-                        unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                        await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                        setStore(prev => {
-                            const nextDevices = { ...prev.devices };
-                            delete nextDevices[cleanId];
-                            return { ...prev, devices: nextDevices };
-                        });
-                        return true;
-                    }
-
-                    // Normal Advance
-                    unit.currentStation = routing.nextStationId;
-                    unit.stationName = routing.nextStationName;
-                    unit.updatedAt = timestamp;
-                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                    setStore(prev => {
-                        const nextDevices = { ...prev.devices };
-                        delete nextDevices[cleanId];
-                        return { ...prev, devices: nextDevices };
-                    });
-                    return true;
-                } catch (localErr) {
-                    console.error("Local processor error:", localErr);
-                    alert(`Calculator Station Error: ${localErr.message}`);
-                    return false;
-                }
+                console.error("Cloud Function processCalculatorStation error:", err);
+                alert(`Calculator Station Error: ${err.message || "Processing failed"}`);
+                return false;
             }
         }
 
@@ -690,66 +469,107 @@ export const CQAProvider = ({ children }) => {
     }, [store.wipDevices, getDisplayName, resolveActiveProject]);
 
     const authenticateUser = async (uid, pwd) => {
-        // Try exact match first (useful for emails)
-        let userRef = doc(db, 'users', uid);
-        let snap = await getDoc(userRef);
-
-        // If not found, try uppercase (standard for MES operator IDs)
-        if (!snap.exists()) {
-            userRef = doc(db, 'users', uid.toUpperCase());
-            snap = await getDoc(userRef);
-        }
-
-        if (snap.exists() && snap.data().password === pwd) {
-            const userData = { id: snap.id, ...snap.data() };
-            try {
-                const loginFn = httpsCallable(functions, 'loginAndGetToken');
-                const tokRes = await loginFn({ userId: snap.id, password: pwd });
-                if (tokRes.data?.token) {
-                    await signInWithCustomToken(auth, tokRes.data.token);
-                }
-            } catch (authErr) {
-                console.warn("Firebase Auth custom token sign-in error:", authErr);
+        try {
+            const cleanId = (uid || '').trim();
+            if (!cleanId || !pwd) {
+                return { success: false, message: 'Invalid credentials' };
             }
-            return { success: true, user: userData };
+            const loginFn = httpsCallable(functions, 'loginAndGetToken');
+            const tokRes = await loginFn({ userId: cleanId, password: pwd });
+            if (!tokRes.data?.success || !tokRes.data?.token) {
+                return { success: false, message: 'Invalid credentials' };
+            }
+            const authUserCred = await signInWithCustomToken(auth, tokRes.data.token);
+            if (!authUserCred || !authUserCred.user) {
+                return { success: false, message: 'Authentication failed' };
+            }
+
+            // Verify developer claims match
+            try {
+                const tokenResult = await authUserCred.user.getIdTokenResult(true);
+                if (tokenResult.claims.role && tokRes.data.user?.role && tokenResult.claims.role !== tokRes.data.user.role) {
+                    console.warn('[Auth] Token claim role differs from server user role. Signing out.');
+                    await auth.signOut();
+                    return { success: false, message: 'Role claims mismatch' };
+                }
+            } catch (claimErr) {
+                console.warn('[Auth] Token claims inspection notice:', claimErr);
+            }
+
+            const returnedUser = tokRes.data.user || {};
+            const cleanUser = {
+                id: returnedUser.id || authUserCred.user.uid,
+                name: returnedUser.name || authUserCred.user.uid,
+                role: returnedUser.role || 'Operator',
+                stations: Array.isArray(returnedUser.stations) ? returnedUser.stations : []
+            };
+            // Persist clean session (never store plaintext password)
+            localStorage.setItem('cqa_user', JSON.stringify(cleanUser));
+            return { success: true, user: cleanUser };
+        } catch (authErr) {
+            console.error('[Auth] Authentication failed:', authErr);
+            if (authErr?.code === 'functions/not-found') {
+                return { 
+                    success: false, 
+                    message: "Backend Cloud Function 'loginAndGetToken' is not deployed to Firebase. Run 'firebase deploy --only functions' per the Security Runbook." 
+                };
+            }
+            if (authErr?.code === 'functions/unavailable') {
+                return { success: false, message: 'Authentication service temporarily unreachable. Check network or emulator.' };
+            }
+            if (authErr?.code === 'functions/unauthenticated') {
+                return { success: false, message: 'Invalid credentials.' };
+            }
+            return { success: false, message: authErr?.message || 'Invalid credentials' };
         }
-        return { success: false, message: 'Invalid credentials' };
     };
-
-    // Background Firebase Auth session restoration for custom tokens
-    useEffect(() => {
-        const restoreAuth = async () => {
-            try {
-                const saved = localStorage.getItem('cqa_user');
-                if (saved && !auth.currentUser) {
-                    const u = JSON.parse(saved);
-                    if (u?.id && u?.password) {
-                        const loginFn = httpsCallable(functions, 'loginAndGetToken');
-                        const tokRes = await loginFn({ userId: u.id, password: u.password });
-                        if (tokRes.data?.token) {
-                            await signInWithCustomToken(auth, tokRes.data.token);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn("Auth restoration notice:", e);
-            }
-        };
-        restoreAuth();
-    }, []);
 
     // ─── Media Attachment Logic (Universal) ───
     const uploadProofImage = useCallback(async (base64Img, path) => {
         try {
-            // Re-introduced Firebase Storage for images to prevent Firestore Document Bloat.
-            // Using robust byte conversion to prevent WebView hang bugs.
-            const byteString = atob(base64Img.split(',')[1]);
-            const mimeString = base64Img.split(',')[0].split(':')[1].split(';')[0];
+            if (!base64Img || typeof base64Img !== 'string' || !base64Img.includes(',')) {
+                return { url: null, error: 'Invalid image data.' };
+            }
+
+            const [headerPart, dataPart] = base64Img.split(',');
+            const mimeMatch = headerPart.match(/:(.*?);/);
+            const mimeString = (mimeMatch ? mimeMatch[1] : '').toLowerCase();
+
+            // 1. Whitelist image types (reject SVG and others)
+            const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (!allowedMimes.includes(mimeString)) {
+                return { url: null, error: `Invalid image type '${mimeString}'. Only JPEG, PNG, and WebP are allowed.` };
+            }
+
+            const byteString = atob(dataPart);
+            // 2. Reject if decoded size > 5 MB
+            const MAX_SIZE = 5 * 1024 * 1024;
+            if (byteString.length > MAX_SIZE) {
+                return { url: null, error: 'Image exceeds maximum allowed size of 5 MB.' };
+            }
+
             const ab = new ArrayBuffer(byteString.length);
             const ia = new Uint8Array(ab);
             for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-            const blob = new Blob([ab], { type: mimeString });
 
+            // 3. Confirm magic bytes
+            let isValidMagic = false;
+            if (mimeString === 'image/jpeg') {
+                isValidMagic = ia.length >= 3 && ia[0] === 0xFF && ia[1] === 0xD8 && ia[2] === 0xFF;
+            } else if (mimeString === 'image/png') {
+                isValidMagic = ia.length >= 8 && ia[0] === 0x89 && ia[1] === 0x50 && ia[2] === 0x4E && ia[3] === 0x47;
+            } else if (mimeString === 'image/webp') {
+                // RIFF....WEBP: RIFF at 0..3 and WEBP at 8..11
+                isValidMagic = ia.length >= 12 &&
+                    ia[0] === 0x52 && ia[1] === 0x49 && ia[2] === 0x46 && ia[3] === 0x46 &&
+                    ia[8] === 0x57 && ia[9] === 0x45 && ia[10] === 0x42 && ia[11] === 0x50;
+            }
+
+            if (!isValidMagic) {
+                return { url: null, error: `Corrupted or invalid image header for ${mimeString}.` };
+            }
+
+            const blob = new Blob([ab], { type: mimeString });
             const storageRef = ref(storage, path);
             const uploadTask = uploadBytes(storageRef, blob);
 
@@ -767,7 +587,6 @@ export const CQAProvider = ({ children }) => {
 
     // ─── Bulk Operations (FOR RECEIVING MODULE) ───
     const bulkProcessUnits = useCallback(async (unitConfigs) => {
-        const batch = writeBatch(db);
         const timestamp = new Date().toISOString();
         const results = { success: 0, fail: 0, errors: [] };
 
@@ -1502,57 +1321,8 @@ export const CQAProvider = ({ children }) => {
             });
             return { success: true, ...res.data };
         } catch (err) {
-            console.warn("Cloud Function unhold unreachable, executing local unhold:", err.message);
-            try {
-                const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
-                const deviceRef = doc(db, 'devices', cleanId);
-                const snap = await getDoc(deviceRef);
-                if (!snap.exists()) return { success: false, message: `Unit "${cleanId}" not found.` };
-                const unit = snap.data();
-
-                const holdStationName = unit.holdStation;
-                const timestamp = new Date().toISOString();
-                const movementId = generateCalcMovementId('UNHOLD');
-
-                const historyEntry = {
-                    station: holdStationName,
-                    stationId: unit.holdStationId || unit.currentStation,
-                    timestamp,
-                    result: 'UNHOLD',
-                    operator: 'LOCAL_OPERATOR',
-                    looper: unit.looper,
-                    project: 'Calculator',
-                    movementId,
-                    details: {
-                        unholdBy: 'LOCAL_OPERATOR',
-                        unholdAt: timestamp,
-                        previousHoldReason: unit.holdReason,
-                        previousHoldRemarks: unit.holdRemarks,
-                        previousHoldTimestamp: unit.holdTimestamp
-                    }
-                };
-
-                unit.holdStatus = null;
-                unit.holdStation = null;
-                unit.holdStationId = null;
-                unit.holdReason = null;
-                unit.holdRemarks = null;
-                unit.holdTimestamp = null;
-                unit.holdUserId = null;
-                unit.updatedAt = timestamp;
-                unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                setStore(prev => {
-                    const nextDevices = { ...prev.devices };
-                    delete nextDevices[cleanId];
-                    return { ...prev, devices: nextDevices };
-                });
-                return { success: true, station: holdStationName, movementId };
-            } catch (localErr) {
-                console.error("Local unhold error:", localErr);
-                return { success: false, message: localErr.message };
-            }
+            console.error("Cloud Function unhold error:", err);
+            return { success: false, message: err.message || "Failed to unhold unit." };
         }
     }, []);
 
@@ -1570,196 +1340,429 @@ export const CQAProvider = ({ children }) => {
             }
             return { success: true, ...res.data };
         } catch (err) {
-            console.warn("Cloud Function scrap analysis unreachable, executing local scrap action:", err.message);
-            try {
-                const { serialNumber, action, scrapReason, scrapRemarks, returnReason, returnRemarks } = data;
-                const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
-                const deviceRef = doc(db, 'devices', cleanId);
-                const snap = await getDoc(deviceRef);
-                if (!snap.exists()) return { success: false, message: `Unit "${cleanId}" not found.` };
-                const unit = snap.data();
-                const timestamp = new Date().toISOString();
-                const movementId = generateCalcMovementId('SCRAP');
-
-                if (action === 'APPROVE_SCRAP') {
-                    const historyEntry = {
-                        station: 'SCRAP ANALYSIS',
-                        stationId: 9,
-                        timestamp,
-                        result: 'SCRAPPED',
-                        operator: 'SCRAP_OFFICER',
-                        looper: unit.looper,
-                        project: 'Calculator',
-                        movementId,
-                        details: {
-                            action: 'APPROVE_SCRAP',
-                            scrapReason: scrapReason.trim(),
-                            scrapRemarks: scrapRemarks.trim(),
-                            scrapApprovedAt: timestamp
-                        }
-                    };
-
-                    unit.status = 'SCRAPPED';
-                    unit.lockDate = timestamp;
-                    unit.scrapApprovedAt = timestamp;
-                    unit.scrapReason = scrapReason.trim();
-                    unit.updatedAt = timestamp;
-                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                    setStore(prev => {
-                        const nextDevices = { ...prev.devices };
-                        delete nextDevices[cleanId];
-                        return { ...prev, devices: nextDevices };
-                    });
-                    return { success: true, action: 'APPROVE_SCRAP', status: 'SCRAPPED', movementId };
-                }
-
-                if (action === 'RETURN_TO_PREVIOUS') {
-                    const inboundMovementId = unit.scrapInboundMovementId;
-                    const history = Array.isArray(unit.history) ? unit.history : [];
-                    let inboundEntry = inboundMovementId ? history.find(h => h.movementId === inboundMovementId) : null;
-                    if (!inboundEntry) {
-                        inboundEntry = [...history].reverse().find(h => h.stationId !== 9);
-                    }
-
-                    const returnStationId = inboundEntry?.fromStationId || inboundEntry?.stationId || 4;
-                    const returnStationName = inboundEntry?.fromStationName || inboundEntry?.station || 'HARDWARE QC / DEBUG';
-
-                    const historyEntry = {
-                        station: 'SCRAP ANALYSIS',
-                        stationId: 9,
-                        timestamp,
-                        result: 'RETURNED_TO_PREVIOUS',
-                        operator: 'SCRAP_OFFICER',
-                        looper: unit.looper,
-                        project: 'Calculator',
-                        movementId,
-                        details: {
-                            action: 'RETURN_TO_PREVIOUS',
-                            returnReason: returnReason.trim(),
-                            returnRemarks: returnRemarks.trim(),
-                            returnedTo: returnStationName,
-                            returnedToStationId: returnStationId,
-                            inboundMovementId: inboundMovementId || 'N/A',
-                            returnedAt: timestamp
-                        }
-                    };
-
-                    unit.currentStation = returnStationId;
-                    unit.stationName = returnStationName;
-                    unit.status = 'Processing';
-                    unit.scrapInboundMovementId = null;
-                    unit.updatedAt = timestamp;
-                    unit.history = [...(Array.isArray(unit.history) ? unit.history : []), historyEntry];
-
-                    await setDoc(deviceRef, JSON.parse(JSON.stringify(unit)));
-                    setStore(prev => {
-                        const nextDevices = { ...prev.devices };
-                        delete nextDevices[cleanId];
-                        return { ...prev, devices: nextDevices };
-                    });
-                    return {
-                        success: true,
-                        action: 'RETURN_TO_PREVIOUS',
-                        destination: returnStationName,
-                        destinationId: returnStationId,
-                        movementId
-                    };
-                }
-            } catch (localErr) {
-                console.error("Local scrap action error:", localErr);
-                return { success: false, message: localErr.message };
-            }
+            console.error("Cloud Function scrap analysis error:", err);
+            return { success: false, message: err.message || "Failed to process scrap analysis." };
         }
     }, []);
+
+        // ===== STATION ADVANCED WORKFLOWS: APPROVED FG & COMMIT REJECTION =====
+    const validateAdvancedUnit = useCallback(async (id, currentProject, workflowType) => {
+        if (!id || !id.trim()) {
+            return { isValid: false, statusKey: 'EMPTY_SERIAL', message: 'Serial number is required.' };
+        }
+        const targetCat = getProjectCategory(currentProject);
+        if (targetCat !== 'Peripherals' && targetCat !== 'Inward QC') {
+            return {
+                isValid: false,
+                statusKey: 'PROJECT_UNSUPPORTED',
+                message: `Advanced features are only available for Peripherals and Inward QC projects.`
+            };
+        }
+
+        const cleanId = id.trim().toUpperCase().replace(/\//g, '-');
+        const unit = await getUnitById(cleanId);
+        if (!unit) {
+            return { isValid: false, statusKey: 'NOT_FOUND', message: `Unit ID "${cleanId}" not found in database.` };
+        }
+
+        // Project / Category validation
+        const unitCat = getProjectCategory(unit._resolvedProject || unit.project);
+        if (unitCat !== targetCat && unit.project !== currentProject) {
+            return {
+                isValid: false,
+                statusKey: 'PROJECT_MISMATCH',
+                message: `Project mismatch: Unit belongs to "${unit.project || unitCat}", not "${currentProject}".`,
+                unit
+            };
+        }
+
+        const currentStatus = unit.status || 'Unknown';
+        const isLocked = ['Scrap', 'SCRAPPED', 'Reject', 'Rejected'].includes(currentStatus) || ['Rejected', 'Scrapped'].includes(unit.unitStatus);
+        const isCompleted = ['Completed', 'Complete'].includes(currentStatus) || unit.unitStatus === 'FG';
+        const isOnHold = unit.holdStatus === 'HOLD';
+
+        if (isOnHold) {
+            return {
+                isValid: false,
+                statusKey: 'ON_HOLD',
+                message: `Unit "${cleanId}" is ON HOLD at ${unit.holdStation || 'current station'}. Station unhold required.`,
+                unit
+            };
+        }
+
+        if (workflowType === 'APPROVED_FG') {
+            if (isCompleted) {
+                return {
+                    isValid: false,
+                    statusKey: 'ALREADY_COMPLETED',
+                    message: `Unit "${cleanId}" is already marked as Finished Goods (FG).`,
+                    unit
+                };
+            }
+            if (isLocked) {
+                return {
+                    isValid: false,
+                    statusKey: 'LOCKED',
+                    message: `Unit "${cleanId}" is in terminal status "${currentStatus}" (Locked).`,
+                    unit
+                };
+            }
+            return {
+                isValid: true,
+                statusKey: 'ELIGIBLE_FOR_FG',
+                message: 'Unit is eligible for Finished Goods approval.',
+                unit
+            };
+        }
+
+        if (workflowType === 'COMMIT_REJECTION') {
+            if (['Reject', 'Rejected'].includes(currentStatus) || unit.unitStatus === 'Rejected') {
+                return {
+                    isValid: false,
+                    statusKey: 'ALREADY_REJECTED',
+                    message: `Unit "${cleanId}" is already marked as Rejected.`,
+                    unit
+                };
+            }
+            if (['Scrap', 'SCRAPPED'].includes(currentStatus) || unit.unitStatus === 'Scrapped') {
+                return {
+                    isValid: false,
+                    statusKey: 'ALREADY_SCRAPPED',
+                    message: `Unit "${cleanId}" is already in Scrapped status (Locked).`,
+                    unit
+                };
+            }
+            if (isCompleted) {
+                return {
+                    isValid: false,
+                    statusKey: 'ALREADY_COMPLETED',
+                    message: `Unit "${cleanId}" is already Completed (FG). Cannot commit rejection.`,
+                    unit
+                };
+            }
+            return {
+                isValid: true,
+                statusKey: 'ELIGIBLE_FOR_REJECTION',
+                message: 'Unit is eligible for rejection.',
+                unit
+            };
+        }
+
+        return { isValid: true, statusKey: 'VALID', message: 'Unit is valid.', unit };
+    }, [getUnitById, getProjectCategory]);
+
+    const executeAdvancedFGApproval = useCallback(async ({
+        serialNumbers,
+        qcRemarks,
+        conditionalApprovalReason = '',
+        station,
+        project,
+        user
+    }) => {
+        const projCat = getProjectCategory(project);
+        if (projCat !== 'Peripherals' && projCat !== 'Inward QC') {
+            throw new Error('Advanced FG Approval is only enabled for Peripherals and Inward QC projects.');
+        }
+        if (!serialNumbers || !Array.isArray(serialNumbers) || serialNumbers.length === 0) {
+            throw new Error('At least one serial number is required.');
+        }
+        if (!qcRemarks || !['Approved FG', 'Conditional Approved'].includes(qcRemarks)) {
+            throw new Error('QC Remarks is mandatory and must be "Approved FG" or "Conditional Approved".');
+        }
+        const isConditional = qcRemarks === 'Conditional Approved';
+        if (isConditional && (!conditionalApprovalReason || !conditionalApprovalReason.trim())) {
+            throw new Error('Reason for Conditional Approval is mandatory.');
+        }
+
+        const timestamp = new Date().toISOString();
+        const cleanReason = isConditional ? conditionalApprovalReason.trim() : null;
+        const operatorName = user?.name || user?.id || JSON.parse(localStorage.getItem('cqa_user') || '{}')?.name || 'SYSTEM_OPERATOR';
+
+        const results = {
+            success: 0,
+            failed: 0,
+            successUnits: [],
+            failedUnits: []
+        };
+
+        const batch = writeBatch(db);
+        const toCommitDocs = [];
+
+        for (const rawId of serialNumbers) {
+            const cleanId = rawId.trim().toUpperCase().replace(/\//g, '-');
+            try {
+                const devRef = doc(db, 'devices', cleanId);
+                const snap = await getDoc(devRef);
+                if (!snap.exists()) {
+                    results.failed++;
+                    results.failedUnits.push({ serialNumber: cleanId, error: 'Serial number not found in database.' });
+                    continue;
+                }
+                const fresh = snap.data();
+
+                if (fresh.status === 'Completed' || fresh.status === 'Complete' || fresh.unitStatus === 'FG') {
+                    results.failed++;
+                    results.failedUnits.push({ serialNumber: cleanId, error: 'Unit is already marked as Finished Goods (Completed).' });
+                    continue;
+                }
+                if (['Scrap', 'SCRAPPED', 'Reject', 'Rejected'].includes(fresh.status) || ['Rejected', 'Scrapped'].includes(fresh.unitStatus)) {
+                    results.failed++;
+                    results.failedUnits.push({ serialNumber: cleanId, error: `Unit is locked in ${fresh.status} status.` });
+                    continue;
+                }
+                if (fresh.holdStatus === 'HOLD') {
+                    results.failed++;
+                    results.failedUnits.push({ serialNumber: cleanId, error: `Unit is ON HOLD at ${fresh.holdStation || 'current station'}.` });
+                    continue;
+                }
+
+                const historyEntry = {
+                    station: `${station?.name || 'QC'} [ADVANCED FG]`,
+                    stationId: station?.id || 2,
+                    timestamp,
+                    result: isConditional ? 'CONDITIONAL_APPROVED_FG' : 'APPROVED_FG',
+                    operator: operatorName,
+                    qcRemarks,
+                    conditionalApprovalReason: cleanReason,
+                    project: fresh.project || project,
+                    details: {
+                        workflow: 'ADVANCED_FG',
+                        qcRemarks,
+                        conditionalApprovalReason: cleanReason,
+                        unitStatus: 'FG',
+                        wipStatus: 'Complete',
+                        previousStation: fresh.stationName || station?.name || 'QC',
+                        stationId: station?.id || 2,
+                        stationName: station?.name || 'QC'
+                    }
+                };
+
+                const updatedDevice = {
+                    ...fresh,
+                    unitStatus: 'FG',
+                    wipStatus: 'Complete',
+                    status: 'Completed',
+                    currentStation: null,
+                    stationName: 'FG (DONE)',
+                    qcRemarks,
+                    conditionalApprovalReason: cleanReason,
+                    cycleEndDate: timestamp,
+                    updatedAt: timestamp,
+                    history: [...(Array.isArray(fresh.history) ? fresh.history : []), historyEntry]
+                };
+
+                batch.set(devRef, JSON.parse(JSON.stringify(updatedDevice)));
+                toCommitDocs.push({
+                    serialNumber: cleanId,
+                    previousStatus: fresh.status || 'Processing',
+                    project: fresh.project || project,
+                    updatedDevice
+                });
+            } catch (unitErr) {
+                results.failed++;
+                results.failedUnits.push({ serialNumber: cleanId, error: unitErr.message });
+            }
+        }
+
+        if (toCommitDocs.length > 0) {
+            await batch.commit();
+
+            for (const item of toCommitDocs) {
+                results.success++;
+                results.successUnits.push({
+                    serialNumber: item.serialNumber,
+                    unitStatus: 'FG',
+                    wipStatus: 'Complete',
+                    qcRemarks,
+                    conditionalApprovalReason: cleanReason
+                });
+
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices, [item.serialNumber]: item.updatedDevice };
+                    const nextWip = { ...prev.wipDevices };
+                    delete nextWip[item.serialNumber];
+                    return { ...prev, devices: nextDevices, wipDevices: nextWip };
+                });
+
+                await logAdminAction({
+                    actor: user || { id: 'OPERATOR', name: operatorName, role: 'Operator' },
+                    action: AUDIT_ACTIONS.SERIAL_STATUS_OVERRIDE,
+                    entity: 'device',
+                    entityId: item.serialNumber,
+                    project: item.project || project,
+                    previousValue: { status: item.previousStatus },
+                    newValue: { unitStatus: 'FG', wipStatus: 'Complete', status: 'Completed', qcRemarks },
+                    reason: isConditional ? `Conditional Approved: ${cleanReason}` : 'Approved FG',
+                    remarks: isConditional ? cleanReason : `Approved FG from station ${station?.name || 'QC'}`,
+                    status: 'SUCCESS'
+                }).catch(e => console.warn('Audit log error:', e));
+            }
+        }
+
+        return results;
+    }, [getProjectCategory]);
+
+    const executeAdvancedRejection = useCallback(async ({
+        serialNumber,
+        failureReason,
+        station,
+        project,
+        user
+    }) => {
+        const projCat = getProjectCategory(project);
+        if (projCat !== 'Peripherals' && projCat !== 'Inward QC') {
+            throw new Error('Advanced Commit Rejection is only enabled for Peripherals and Inward QC projects.');
+        }
+        if (!serialNumber || !serialNumber.trim()) {
+            throw new Error('Defective serial number is required.');
+        }
+        if (!failureReason || !failureReason.trim()) {
+            throw new Error('Failure Reason is mandatory.');
+        }
+
+        const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
+        const cleanReason = failureReason.trim();
+        const timestamp = new Date().toISOString();
+        const operatorName = user?.name || user?.id || JSON.parse(localStorage.getItem('cqa_user') || '{}')?.name || 'SYSTEM_OPERATOR';
+
+        const devRef = doc(db, 'devices', cleanId);
+        const snap = await getDoc(devRef);
+        if (!snap.exists()) {
+            throw new Error(`Serial number "${cleanId}" not found in database.`);
+        }
+        const fresh = snap.data();
+
+        if (['Reject', 'Rejected'].includes(fresh.status) || fresh.unitStatus === 'Rejected') {
+            throw new Error(`Unit "${cleanId}" is already marked as Rejected.`);
+        }
+        if (['Scrap', 'SCRAPPED'].includes(fresh.status) || fresh.unitStatus === 'Scrapped') {
+            throw new Error(`Unit "${cleanId}" is already marked as Scrapped (Locked).`);
+        }
+        if (fresh.status === 'Completed' || fresh.unitStatus === 'FG') {
+            throw new Error(`Unit "${cleanId}" is already Completed (FG). Cannot commit rejection.`);
+        }
+        if (fresh.holdStatus === 'HOLD') {
+            throw new Error(`Unit "${cleanId}" is ON HOLD at ${fresh.holdStation || 'current station'}. Unhold before rejection.`);
+        }
+
+        const historyEntry = {
+            station: `${station?.name || 'QC'} [ADVANCED REJECTION]`,
+            stationId: station?.id || 2,
+            timestamp,
+            result: 'REJECTED',
+            operator: operatorName,
+            failureReason: cleanReason,
+            project: fresh.project || project,
+            details: {
+                workflow: 'ADVANCED_REJECTION',
+                failureReason: cleanReason,
+                unitStatus: 'Rejected',
+                wipStatus: 'Complete',
+                previousStation: fresh.stationName || station?.name || 'QC',
+                stationId: station?.id || 2,
+                stationName: station?.name || 'QC'
+            }
+        };
+
+        const updatedDevice = {
+            ...fresh,
+            unitStatus: 'Rejected',
+            wipStatus: 'Complete',
+            status: 'Reject',
+            currentStation: null,
+            stationName: 'REJECTED',
+            failureReason: cleanReason,
+            lockDate: timestamp,
+            updatedAt: timestamp,
+            history: [...(Array.isArray(fresh.history) ? fresh.history : []), historyEntry]
+        };
+
+        await setDoc(devRef, JSON.parse(JSON.stringify(updatedDevice)));
+
+        setStore(prev => {
+            const nextDevices = { ...prev.devices, [cleanId]: updatedDevice };
+            const nextWip = { ...prev.wipDevices };
+            delete nextWip[cleanId];
+            return { ...prev, devices: nextDevices, wipDevices: nextWip };
+        });
+
+        await logAdminAction({
+            actor: user || { id: 'OPERATOR', name: operatorName, role: 'Operator' },
+            action: AUDIT_ACTIONS.SERIAL_STATUS_OVERRIDE,
+            entity: 'device',
+            entityId: cleanId,
+            project: fresh.project || project,
+            previousValue: { status: fresh.status || 'Processing' },
+            newValue: { unitStatus: 'Rejected', wipStatus: 'Complete', status: 'Reject', failureReason: cleanReason },
+            reason: cleanReason,
+            remarks: `Defect recorded at station ${station?.name || 'QC'}`,
+            status: 'SUCCESS'
+        }).catch(e => console.warn('Audit log error:', e));
+
+        return {
+            success: true,
+            serialNumber: cleanId,
+            failureReason: cleanReason,
+            unit: updatedDevice
+        };
+    }, [getProjectCategory]);
 
     const contextValue = {
         store, loading,
         getUnit: getUnitById,
         validateScan: validateScanStatus,
+        validateAdvancedUnit,
+        executeAdvancedFGApproval,
+        executeAdvancedRejection,
         processUnit, bulkProcessUnits, fetchStationMetrics, uploadProofImage,
         validateMovementUnits, executeAdminMovement, reverseAdminMovement, fetchAdminMovements,
         unholdCalculatorSerial, processScrapAnalysis,
         systemNames, getDisplayName, getProjectCategory, resolveActiveProject, authenticateUser,
-        createUser: async (u) => setDoc(doc(db, 'users', u.id), u),
-        updateUser: async (oldId, userData) => {
-            if (oldId !== userData.id) {
-                // ID changed: Create new and delete old
-                await setDoc(doc(db, 'users', userData.id), userData);
-                await deleteDoc(doc(db, 'users', oldId));
-            } else {
-                await setDoc(doc(db, 'users', userData.id), userData);
-            }
-            return { success: true };
+        createUser: async (u) => {
+            const fn = httpsCallable(functions, 'adminUpsertUser');
+            const res = await fn({ id: u.id, name: u.name, role: u.role, stations: u.stations, password: u.password });
+            return res.data;
         },
-        deleteUser: async (id) => deleteDoc(doc(db, 'users', id)),
+        updateUser: async (oldId, userData) => {
+            const fn = httpsCallable(functions, 'adminUpsertUser');
+            const res = await fn({
+                id: userData.id,
+                oldId: oldId !== userData.id ? oldId : undefined,
+                name: userData.name,
+                role: userData.role,
+                stations: userData.stations,
+                password: userData.password ? userData.password : undefined
+            });
+            return res.data;
+        },
+        deleteUser: async (id) => {
+            const fn = httpsCallable(functions, 'adminDeleteUser');
+            const res = await fn({ id });
+            return res.data;
+        },
         updateSystemNames: async (newNames) => {
             await setDoc(doc(db, 'settings', 'system_names'), newNames);
             return { success: true };
         },
         purgeData: async (filters) => {
-            console.log("Purging data with filters:", filters);
-            try {
-                const querySnapshot = await getDocs(collection(db, 'devices'));
-                const batch = writeBatch(db);
-                let count = 0;
-
-                querySnapshot.forEach((docSnap) => {
-                    const data = docSnap.data();
-                    let shouldDelete = false;
-
-                    // Handle legacy purge targets (strings)
-                    if (typeof filters === 'string') {
-                        if (filters === 'all') shouldDelete = true;
-                        else if (filters === 'completed' && data.status === 'Completed') shouldDelete = true;
-                        else if (filters === 'scrap' && (data.status === 'Scrap' || data.status === 'Reject' || data.status === 'SCRAPPED')) shouldDelete = true;
-                    }
-                    // Handle specific filters (object)
-                    else {
-                        const { project, station, serial } = filters;
-
-                        // Priority 1: Serial Number (Exact match)
-                        if (serial && data.id === serial.trim().toUpperCase().replace(/\//g, '-')) {
-                            shouldDelete = true;
-                        }
-                        // Priority 2: Project + Station match
-                        else if (project && station) {
-                            if (data.project === project && data.stationName === station) {
-                                shouldDelete = true;
-                            }
-                        }
-                        // Priority 3: Project match only
-                        else if (project && !station && !serial) {
-                            if (data.project === project) shouldDelete = true;
-                        }
-                        // Priority 4: Station match only
-                        else if (station && !project && !serial) {
-                            if (data.stationName === station) shouldDelete = true;
-                        }
-                    }
-
-                    if (shouldDelete) {
-                        batch.delete(doc(db, 'devices', docSnap.id));
-                        count++;
-                    }
-                });
-
-                if (count > 0) {
-                    await batch.commit();
-                    return { success: true, count };
-                }
-                return { success: true, count: 0 };
-            } catch (error) {
-                console.error("Purge failed:", error);
-                throw error;
-            }
+            const fn = httpsCallable(functions, 'purgeDevices');
+            const res = await fn({ filters });
+            return res.data;
         },
         toggleMaintenanceMode: async (val) => setDoc(doc(db, 'settings', 'global'), { maintenanceMode: val }),
         requestPasswordReset: async (id) => setDoc(doc(db, 'tickets', id), { userId: id, status: 'Pending', requestedAt: new Date().toISOString() }),
         updateTicketStatus: async (id, status) => setDoc(doc(db, 'tickets', id), { status }, { merge: true }),
-        resetUserPassword: async (id, pwd) => setDoc(doc(db, 'users', id), { password: pwd }, { merge: true }),
-        getAuditLogs: (id) => store.devices ? [] : [], // Placeholder
+        resetUserPassword: async (id, pwd) => {
+            const fn = httpsCallable(functions, 'adminResetPassword');
+            const res = await fn({ id, newPassword: pwd });
+            return res.data;
+        },
+        changeOwnPassword: async (currentPassword, newPassword) => {
+            const fn = httpsCallable(functions, 'changeOwnPassword');
+            const res = await fn({ currentPassword, newPassword });
+            return res.data;
+        },
+        getAuditLogs: () => store.devices ? [] : [], // Placeholder
 
         // ─── BAAN MODULE OPERATIONS ───
         createBaanLocation: async (loc, user) => {

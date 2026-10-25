@@ -57,9 +57,20 @@ const BaanBulkInward = () => {
         XLSX.writeFile(wb, 'Bulk_Inward_Template.xlsx');
     };
 
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+    const MAX_ROW_COUNT = 5000;
+
     const handleFileUpload = (e) => {
         const uploadedFile = e.target.files[0];
         if (!uploadedFile) return;
+
+        if (uploadedFile.size > MAX_FILE_SIZE) {
+            setUploadStatus({ type: 'error', message: 'File size exceeds maximum limit of 5 MB.' });
+            setPreviewData([]);
+            if (e.target) e.target.value = '';
+            return;
+        }
+
         setFile(uploadedFile);
         setUploadStatus(null);
         setUploadSummary(null);
@@ -72,6 +83,13 @@ const BaanBulkInward = () => {
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
                 const data = XLSX.utils.sheet_to_json(ws);
+
+                if (data.length > MAX_ROW_COUNT) {
+                    setUploadStatus({ type: 'error', message: `File contains ${data.length} rows, which exceeds the maximum limit of ${MAX_ROW_COUNT} rows.` });
+                    setPreviewData([]);
+                    return;
+                }
+
                 validateData(data);
             } catch (err) {
                 console.error(err);

@@ -101,7 +101,7 @@ export const INITIAL_PROJECTS = [
         description: 'Thermal printers, chargers, scanning accessories, quality control verification, and rejection logs.',
         version: 1,
         defaultSpecs: {
-            categories: ['Printer', 'Charger', 'Cable', 'Scanner', 'Others'],
+            categories: ['Printer', 'Label Printer', 'External Keyboard', 'Charger', 'Cable', 'Scanner', 'Others'],
             productTypes: ['Fresh Lot', 'Reverse', 'RTO', 'Others']
         },
         serialRules: {

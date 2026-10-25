@@ -2,7 +2,7 @@
   "name": "cqa-mes-functions",
   "description": "CQA MES Calculator Refurbishment Cloud Functions",
   "engines": {
-    "node": "18"
+    "node": "20"
   },
   "main": "index.js",
   "dependencies": {

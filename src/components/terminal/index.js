@@ -5,3 +5,4 @@ export { CheckpointGrid } from './CheckpointGrid';
 export { CheckpointCard } from './CheckpointCard';
 export { ProgressActionBar } from './ProgressActionBar';
 export { useCheckpointNavigation } from './useCheckpointNavigation';
+export { StationAdvancedModule } from './StationAdvancedModule';

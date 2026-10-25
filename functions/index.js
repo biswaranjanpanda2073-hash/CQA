@@ -16,10 +16,126 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const crypto = require("crypto");
+const util = require("util");
+const scryptAsync = util.promisify(crypto.scrypt);
 
 const app = initializeApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
+
+// ═══════════════════════════════════════════════════════════════
+// CRYPTO & AUTH HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+const SCRYPT_CONFIG = {
+    N: 16384,
+    r: 8,
+    p: 1,
+    keylen: 64,
+};
+
+async function hashPassword(plainPassword) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const derivedKey = await scryptAsync(plainPassword, salt, SCRYPT_CONFIG.keylen, {
+        N: SCRYPT_CONFIG.N,
+        r: SCRYPT_CONFIG.r,
+        p: SCRYPT_CONFIG.p,
+    });
+    return {
+        hash: derivedKey.toString("hex"),
+        salt,
+        N: SCRYPT_CONFIG.N,
+        r: SCRYPT_CONFIG.r,
+        p: SCRYPT_CONFIG.p,
+        keylen: SCRYPT_CONFIG.keylen,
+        updatedAt: new Date().toISOString(),
+    };
+}
+
+async function verifyPassword(plainPassword, secretDocData) {
+    if (!secretDocData || !secretDocData.hash || !secretDocData.salt) return false;
+    const keylen = secretDocData.keylen || SCRYPT_CONFIG.keylen;
+    const N = secretDocData.N || SCRYPT_CONFIG.N;
+    const r = secretDocData.r || SCRYPT_CONFIG.r;
+    const p = secretDocData.p || SCRYPT_CONFIG.p;
+    try {
+        const derivedKey = await scryptAsync(plainPassword, secretDocData.salt, keylen, { N, r, p });
+        const derivedHex = derivedKey.toString("hex");
+        if (derivedHex.length !== secretDocData.hash.length) return false;
+        return crypto.timingSafeEqual(Buffer.from(derivedHex, "utf8"), Buffer.from(secretDocData.hash, "utf8"));
+    } catch (e) {
+        return false;
+    }
+}
+
+function verifyPlaintextTimingSafe(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const bufA = Buffer.from(a, 'utf8');
+    const bufB = Buffer.from(b, 'utf8');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function generateAuditId() {
+    const d = new Date();
+    const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const timeStr = d.toISOString().slice(11, 19).replace(/:/g, '');
+    const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
+    return `AUD-${dateStr}-${timeStr}-${rand}`;
+}
+
+async function logAuditServer({
+    actorId,
+    actorName,
+    actorRole,
+    action,
+    entity,
+    entityId,
+    project = null,
+    previousValue = null,
+    newValue = null,
+    reason = '',
+    remarks = '',
+    status = 'SUCCESS'
+}) {
+    try {
+        const auditId = generateAuditId();
+        const timestamp = new Date().toISOString();
+        const auditEntry = {
+            id: auditId,
+            timestamp,
+            actorId: String(actorId || 'UNKNOWN'),
+            actorName: String(actorName || actorId || 'System Administrator'),
+            actorRole: String(actorRole || 'Admin'),
+            action,
+            entity,
+            entityId: String(entityId || 'N/A'),
+            project: project || null,
+            previousValue: previousValue ? JSON.parse(JSON.stringify(previousValue)) : null,
+            newValue: newValue ? JSON.parse(JSON.stringify(newValue)) : null,
+            reason: reason || 'Administrative modification',
+            remarks: remarks || '',
+            status
+        };
+        await db.collection("audit_logs").doc(auditId).set(auditEntry);
+        return { success: true, auditId };
+    } catch (err) {
+        console.error("Failed to record server audit log:", err);
+        return { success: false, error: err.message };
+    }
+}
+
+async function getCallerUser(request) {
+    if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+    const callerDoc = await db.collection("users").doc(request.auth.uid).get();
+    if (!callerDoc.exists) {
+        throw new HttpsError("permission-denied", "Caller user record not found.");
+    }
+    return { uid: request.auth.uid, data: callerDoc.data() };
+}
 
 // ═══════════════════════════════════════════════════════════════
 // SHARED CONSTANTS (mirrored from calculatorEngine.js)
@@ -157,9 +273,9 @@ function validateDynamicTarget(fromStationId, selectedNextStationId) {
 // ═══════════════════════════════════════════════════════════════
 
 exports.loginAndGetToken = onCall(async (request) => {
-    const { userId, password } = request.data;
-    if (!userId || !password) {
-        throw new HttpsError("invalid-argument", "userId and password are required.");
+    const { userId, password } = request.data || {};
+    if (!userId || !password || typeof userId !== 'string' || typeof password !== 'string') {
+        throw new HttpsError("unauthenticated", "Invalid credentials.");
     }
 
     // Check exact match first, then uppercase
@@ -168,12 +284,71 @@ exports.loginAndGetToken = onCall(async (request) => {
         userDoc = await db.collection("users").doc(userId.toUpperCase()).get();
     }
 
-    if (!userDoc.exists || userDoc.data().password !== password) {
+    if (!userDoc.exists) {
         throw new HttpsError("unauthenticated", "Invalid credentials.");
     }
 
     const userData = userDoc.data();
     const uid = userDoc.id;
+
+    // Reject disabled/deactivated users if the user document has such a flag
+    if (userData.disabled === true || userData.deactivated === true ||
+        userData.status === 'Deactivated' || userData.status === 'Disabled') {
+        throw new HttpsError("unauthenticated", "Invalid credentials.");
+    }
+
+    const secretRef = db.collection("user_secrets").doc(uid);
+    const secretDoc = await secretRef.get();
+    const secretData = secretDoc.exists ? secretDoc.data() : null;
+
+    // Brute-force protection: lock for 15 min after 5 consecutive failures
+    if (secretData?.lockedUntil) {
+        const lockExpiry = new Date(secretData.lockedUntil).getTime();
+        if (Date.now() < lockExpiry) {
+            throw new HttpsError("unauthenticated", "Invalid credentials.");
+        }
+    }
+
+    let isValid = false;
+    let needsLazyMigration = false;
+
+    if (secretDoc.exists && secretData?.hash && secretData?.salt) {
+        isValid = await verifyPassword(password, secretData);
+    } else if (userData.password) {
+        // Lazy migration: if user_secrets/{uid} does not exist but users/{uid}.password exists (legacy plaintext)
+        isValid = verifyPlaintextTimingSafe(password, userData.password);
+        if (isValid) {
+            needsLazyMigration = true;
+        }
+    }
+
+    if (!isValid) {
+        const failedAttempts = ((secretData?.failedAttempts) || 0) + 1;
+        const updates = { failedAttempts };
+        if (failedAttempts >= 5) {
+            updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        }
+        await secretRef.set(updates, { merge: true });
+        throw new HttpsError("unauthenticated", "Invalid credentials.");
+    }
+
+    // Password is valid!
+    if (needsLazyMigration) {
+        const hashedSecret = await hashPassword(password);
+        const batch = db.batch();
+        batch.set(secretRef, {
+            ...hashedSecret,
+            failedAttempts: 0,
+            lockedUntil: null
+        }, { merge: true });
+        batch.update(userDoc.ref, { password: FieldValue.delete() });
+        await batch.commit();
+    } else {
+        // Reset brute-force counter if needed
+        if (secretData?.failedAttempts > 0 || secretData?.lockedUntil) {
+            await secretRef.set({ failedAttempts: 0, lockedUntil: null }, { merge: true });
+        }
+    }
 
     // Create or update Firebase Auth user for token generation
     try {
@@ -183,8 +358,8 @@ exports.loginAndGetToken = onCall(async (request) => {
         await auth.createUser({ uid, displayName: userData.name || uid });
     }
 
-    // Generate custom token
-    const token = await auth.createCustomToken(uid);
+    // Generate custom token with role claim (never include password or stations list)
+    const token = await auth.createCustomToken(uid, { role: userData.role });
 
     return {
         success: true,
@@ -215,10 +390,21 @@ exports.processCalculatorStation = onCall(async (request) => {
         serialNumber, stationId, result, details,
         checkpointResults, dataValues, textValues,
         selectedNextStationId, routeToScrap
-    } = request.data;
+    } = request.data || {};
 
     if (!serialNumber || stationId === undefined) {
         throw new HttpsError("invalid-argument", "serialNumber and stationId are required.");
+    }
+
+    // Hardening: reject non-string / over-long serialNumber (max 64 chars)
+    if (typeof serialNumber !== 'string' || !serialNumber.trim() || serialNumber.trim().length > 64) {
+        throw new HttpsError("invalid-argument", "serialNumber must be a non-empty string up to 64 characters.");
+    }
+
+    // Hardening: cap size of details/checkpointResults/dataValues/textValues (max 200 KB)
+    const payloadSize = Buffer.byteLength(JSON.stringify({ details, checkpointResults, dataValues, textValues }), 'utf8');
+    if (payloadSize > 200 * 1024) {
+        throw new HttpsError("invalid-argument", "Payload size exceeds 200 KB limit.");
     }
 
     const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
@@ -657,3 +843,336 @@ exports.unholdCalculatorSerial = onCall(async (request) => {
 
     return txResult;
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 5. USER ADMINISTRATION & SECURITY FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+exports.adminUpsertUser = onCall(async (request) => {
+    const caller = await getCallerUser(request);
+    const callerRole = caller.data.role;
+    if (callerRole !== 'Admin' && callerRole !== 'Super Admin') {
+        throw new HttpsError("permission-denied", "Admin or Super Admin role required.");
+    }
+
+    const { id, oldId, name, role, stations, password } = request.data || {};
+    if (!id || typeof id !== 'string' || !id.trim()) {
+        throw new HttpsError("invalid-argument", "id is required.");
+    }
+    const targetId = id.trim();
+    const targetRole = role || 'Operator';
+
+    // Only Super Admin may create/modify users with role Admin or Super Admin
+    if ((targetRole === 'Admin' || targetRole === 'Super Admin') && callerRole !== 'Super Admin') {
+        throw new HttpsError("permission-denied", "Only Super Admin may assign Admin or Super Admin roles.");
+    }
+
+    // Check if target user already exists
+    const targetDoc = await db.collection("users").doc(targetId).get();
+    if (targetDoc.exists) {
+        const existingRole = targetDoc.data().role;
+        if ((existingRole === 'Admin' || existingRole === 'Super Admin') && callerRole !== 'Super Admin') {
+            throw new HttpsError("permission-denied", "Only Super Admin may modify an Admin or Super Admin user.");
+        }
+    }
+
+    // Handle "ID changed" case (create new + delete old, and move secret)
+    if (oldId && oldId.trim() && oldId.trim() !== targetId) {
+        const cleanOldId = oldId.trim();
+        const oldDoc = await db.collection("users").doc(cleanOldId).get();
+        if (oldDoc.exists) {
+            const oldRole = oldDoc.data().role;
+            if ((oldRole === 'Admin' || oldRole === 'Super Admin') && callerRole !== 'Super Admin') {
+                throw new HttpsError("permission-denied", "Only Super Admin may modify an Admin or Super Admin user.");
+            }
+        }
+        // Move secret from oldId to targetId
+        const oldSecretDoc = await db.collection("user_secrets").doc(cleanOldId).get();
+        if (oldSecretDoc.exists) {
+            await db.collection("user_secrets").doc(targetId).set(oldSecretDoc.data());
+            await db.collection("user_secrets").doc(cleanOldId).delete();
+        }
+        await db.collection("users").doc(cleanOldId).delete();
+        try { await auth.deleteUser(cleanOldId); } catch (e) {}
+    }
+
+    // Prepare user doc payload (NEVER write password into users doc)
+    const userPayload = {
+        id: targetId,
+        name: name ? name.trim() : targetId,
+        role: targetRole,
+        stations: Array.isArray(stations) ? stations : [],
+        updatedAt: new Date().toISOString()
+    };
+    await db.collection("users").doc(targetId).set(userPayload, { merge: true });
+
+    // Sync Auth user displayName
+    try {
+        await auth.getUser(targetId);
+        await auth.updateUser(targetId, { displayName: userPayload.name });
+    } catch (e) {
+        await auth.createUser({ uid: targetId, displayName: userPayload.name });
+    }
+
+    // Hash any supplied password into user_secrets
+    if (password) {
+        if (typeof password !== 'string' || password.length < 8) {
+            throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+        }
+        const secretPayload = await hashPassword(password);
+        await db.collection("user_secrets").doc(targetId).set({
+            ...secretPayload,
+            failedAttempts: 0,
+            lockedUntil: null
+        }, { merge: true });
+    }
+
+    await logAuditServer({
+        actorId: caller.uid,
+        actorName: caller.data.name,
+        actorRole: callerRole,
+        action: targetDoc.exists ? 'USER_UPDATED' : 'USER_CREATED',
+        entity: 'user',
+        entityId: targetId,
+        newValue: userPayload,
+        reason: 'Admin user upsert'
+    });
+
+    return { success: true };
+});
+
+exports.adminDeleteUser = onCall(async (request) => {
+    const caller = await getCallerUser(request);
+    const callerRole = caller.data.role;
+    if (callerRole !== 'Admin' && callerRole !== 'Super Admin') {
+        throw new HttpsError("permission-denied", "Admin or Super Admin role required.");
+    }
+
+    const { id } = request.data || {};
+    if (!id || typeof id !== 'string') {
+        throw new HttpsError("invalid-argument", "id is required.");
+    }
+    const targetId = id.trim();
+
+    if (targetId === caller.uid) {
+        throw new HttpsError("failed-precondition", "Cannot delete your own account.");
+    }
+
+    const targetDoc = await db.collection("users").doc(targetId).get();
+    if (targetDoc.exists) {
+        const targetRole = targetDoc.data().role;
+        if ((targetRole === 'Super Admin' || targetRole === 'Admin') && callerRole !== 'Super Admin') {
+            throw new HttpsError("permission-denied", "Cannot delete an Admin or Super Admin user without Super Admin privileges.");
+        }
+    }
+
+    await db.collection("users").doc(targetId).delete();
+    await db.collection("user_secrets").doc(targetId).delete();
+    try { await auth.deleteUser(targetId); } catch (e) {}
+
+    await logAuditServer({
+        actorId: caller.uid,
+        actorName: caller.data.name,
+        actorRole: callerRole,
+        action: 'USER_DEACTIVATED',
+        entity: 'user',
+        entityId: targetId,
+        previousValue: targetDoc.exists ? targetDoc.data() : null,
+        reason: 'Admin user deleted'
+    });
+
+    return { success: true };
+});
+
+exports.adminResetPassword = onCall(async (request) => {
+    const caller = await getCallerUser(request);
+    const callerRole = caller.data.role;
+    if (callerRole !== 'Admin' && callerRole !== 'Super Admin') {
+        throw new HttpsError("permission-denied", "Admin or Super Admin role required.");
+    }
+
+    const { id, newPassword } = request.data || {};
+    if (!id || typeof id !== 'string') {
+        throw new HttpsError("invalid-argument", "id is required.");
+    }
+    const targetId = id.trim();
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+        throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+    }
+
+    const targetDoc = await db.collection("users").doc(targetId).get();
+    if (targetDoc.exists) {
+        const targetRole = targetDoc.data().role;
+        if ((targetRole === 'Super Admin' || targetRole === 'Admin') && callerRole !== 'Super Admin') {
+            throw new HttpsError("permission-denied", "Only Super Admin can reset password of an Admin or Super Admin.");
+        }
+    }
+
+    const secretPayload = await hashPassword(newPassword);
+    await db.collection("user_secrets").doc(targetId).set({
+        ...secretPayload,
+        failedAttempts: 0,
+        lockedUntil: null
+    }, { merge: true });
+
+    // Clean up any legacy password field on the users doc
+    if (targetDoc.exists && targetDoc.data().password) {
+        await targetDoc.ref.update({ password: FieldValue.delete() }).catch(() => {});
+    }
+
+    await logAuditServer({
+        actorId: caller.uid,
+        actorName: caller.data.name,
+        actorRole: callerRole,
+        action: 'USER_PASSWORD_RESET',
+        entity: 'user',
+        entityId: targetId,
+        reason: 'Admin reset password'
+    });
+
+    return { success: true };
+});
+
+exports.changeOwnPassword = onCall(async (request) => {
+    const caller = await getCallerUser(request);
+    const uid = caller.uid;
+
+    const { currentPassword, newPassword } = request.data || {};
+    if (!currentPassword || typeof currentPassword !== 'string') {
+        throw new HttpsError("invalid-argument", "Current password is required.");
+    }
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+        throw new HttpsError("invalid-argument", "New password must be at least 8 characters.");
+    }
+
+    const secretRef = db.collection("user_secrets").doc(uid);
+    const secretDoc = await secretRef.get();
+    let isCurrentValid = false;
+
+    if (secretDoc.exists && secretDoc.data()?.hash) {
+        isCurrentValid = await verifyPassword(currentPassword, secretDoc.data());
+    } else if (caller.data.password) {
+        // Legacy plaintext check
+        isCurrentValid = verifyPlaintextTimingSafe(currentPassword, caller.data.password);
+    }
+
+    if (!isCurrentValid) {
+        throw new HttpsError("unauthenticated", "Current password is incorrect.");
+    }
+
+    const secretPayload = await hashPassword(newPassword);
+    const batch = db.batch();
+    batch.set(secretRef, {
+        ...secretPayload,
+        failedAttempts: 0,
+        lockedUntil: null
+    }, { merge: true });
+    batch.update(db.collection("users").doc(uid), { password: FieldValue.delete() });
+    await batch.commit();
+
+    await logAuditServer({
+        actorId: uid,
+        actorName: caller.data.name,
+        actorRole: caller.data.role,
+        action: 'USER_PASSWORD_RESET',
+        entity: 'user',
+        entityId: uid,
+        reason: 'User self password change'
+    });
+
+    return { success: true };
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 6. PURGE DEVICES (SUPER ADMIN ONLY)
+// ═══════════════════════════════════════════════════════════════
+
+exports.purgeDevices = onCall(async (request) => {
+    const caller = await getCallerUser(request);
+    if (caller.data.role !== 'Super Admin') {
+        throw new HttpsError("permission-denied", "Super Admin privileges required to purge devices.");
+    }
+
+    const { filters } = request.data || {};
+    if (!filters) {
+        throw new HttpsError("invalid-argument", "Purge filters are required.");
+    }
+
+    if (typeof filters === 'string') {
+        if (!['all', 'completed', 'scrap'].includes(filters)) {
+            throw new HttpsError("invalid-argument", `Invalid purge target "${filters}". Must be all, completed, or scrap.`);
+        }
+    } else if (typeof filters === 'object') {
+        if (!filters.project && !filters.station && !filters.serial) {
+            throw new HttpsError("invalid-argument", "At least one filter property (project, station, or serial) is required.");
+        }
+    } else {
+        throw new HttpsError("invalid-argument", "Filters must be a string or object.");
+    }
+
+    const querySnapshot = await db.collection("devices").get();
+    let batch = db.batch();
+    let batchCount = 0;
+    let totalCount = 0;
+
+    for (const docSnap of querySnapshot.docs) {
+        const data = docSnap.data();
+        let shouldDelete = false;
+
+        if (typeof filters === 'string') {
+            if (filters === 'all') shouldDelete = true;
+            else if (filters === 'completed' && data.status === 'Completed') shouldDelete = true;
+            else if (filters === 'scrap' && (data.status === 'Scrap' || data.status === 'Reject' || data.status === 'SCRAPPED')) shouldDelete = true;
+        } else {
+            const { project, station, serial } = filters;
+            // Priority 1: Serial Number (Exact match)
+            if (serial && data.id === serial.trim().toUpperCase().replace(/\//g, '-')) {
+                shouldDelete = true;
+            }
+            // Priority 2: Project + Station match
+            else if (project && station) {
+                if (data.project === project && data.stationName === station) {
+                    shouldDelete = true;
+                }
+            }
+            // Priority 3: Project match only
+            else if (project && !station && !serial) {
+                if (data.project === project) shouldDelete = true;
+            }
+            // Priority 4: Station match only
+            else if (station && !project && !serial) {
+                if (data.stationName === station) shouldDelete = true;
+            }
+        }
+
+        if (shouldDelete) {
+            batch.delete(docSnap.ref);
+            batchCount++;
+            totalCount++;
+            if (batchCount >= 450) {
+                await batch.commit();
+                batch = db.batch();
+                batchCount = 0;
+            }
+        }
+    }
+
+    if (batchCount > 0) {
+        await batch.commit();
+    }
+
+    await logAuditServer({
+        actorId: caller.uid,
+        actorName: caller.data.name,
+        actorRole: caller.data.role,
+        action: 'DATA_PURGED',
+        entity: 'system',
+        entityId: 'devices',
+        reason: 'Administrative device purge',
+        remarks: JSON.stringify({ filters, count: totalCount })
+    });
+
+    return { success: true, count: totalCount };
+});
+

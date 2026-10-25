@@ -1,4 +1,10 @@
 /**
+ * ============================================================================
+ * DANGEROUS: writes to production
+ * DO NOT RUN THIS SCRIPT AGAINST PRODUCTION FIRESTORE / STORAGE
+ * ============================================================================
+ */
+/**
  * ⚠️  BAAN DATA DELETION SCRIPT
  * ───────────────────────────────────────────────────────────
  * This script permanently deletes ALL data from the BAAN

@@ -1,3 +1,9 @@
+/**
+ * ============================================================================
+ * DANGEROUS: writes to production
+ * DO NOT RUN THIS SCRIPT AGAINST PRODUCTION FIRESTORE / STORAGE
+ * ============================================================================
+ */
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, writeBatch, collection, getDoc } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';

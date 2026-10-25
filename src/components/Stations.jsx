@@ -27,7 +27,8 @@ import {
     Camera,
     Plus,
     Loader2,
-    Settings
+    Settings,
+    Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -44,7 +45,8 @@ import {
     CheckpointGrid, 
     CheckpointCard, 
     ProgressActionBar,
-    useCheckpointNavigation
+    useCheckpointNavigation,
+    StationAdvancedModule
 } from './terminal';
 
 
@@ -133,6 +135,27 @@ const SCANNER_QC_CHECKLIST = [
     'Perform visual inspection: body, lens, cable, connector',
     'Verify packaging: box, cushioning, accessories (cable/manual)',
     'Verify charging functionality → connect to power source and confirm charging indicator (LED/icon); ensure device charges and operates normally while charging'
+];
+
+export const EXTERNAL_KEYBOARD_QC_CHECKLIST = [
+    'Verify packaging: box, cushioning, seal no dents or physical damage',
+    'Verify accessories: cable/manual and all items specified for the product',
+    'Perform visual inspection: body, edges, ports, cable/connector → no cracks, scratches or bent pins',
+    'Check all keys are present, properly fitted and labels→ no loose, wobbly or missing keys, clear, readable, not faded or misprinted',
+    'Verify charging functionality → connect to power source and confirm charging indicator (LED/icon)',
+    'Verify ON/Off functionality → Use the Power button to turn On and Off to confirm ON-Off Functionality',
+    'Verify Connectivity → connect the Keyboard to smart calculator (using BT/Dongle)',
+    'Verify Key Functionality → Perfrom the keypress testing as specified.'
+];
+
+export const PERIPHERAL_CATEGORIES = [
+    'Printer',
+    'Label Printer',
+    'External Keyboard',
+    'Charger',
+    'Cable',
+    'Scanner',
+    'Others'
 ];
 
 // Permission Helper
@@ -570,7 +593,18 @@ const Stations = ({ user }) => {
 
 // ─── Standalone View for Terminal Tabs ───
 export const StationExecutionView = ({ stationId, project, user }) => {
-    const { validateScan, processUnit, getUnit, store, getDisplayName, getProjectCategory, unholdCalculatorSerial } = useCQA();
+    const {
+        validateScan,
+        processUnit,
+        getUnit,
+        store,
+        getDisplayName,
+        getProjectCategory,
+        unholdCalculatorSerial,
+        validateAdvancedUnit,
+        executeAdvancedFGApproval,
+        executeAdvancedRejection
+    } = useCQA();
     const [scannedId, setScannedId] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
@@ -579,6 +613,7 @@ export const StationExecutionView = ({ stationId, project, user }) => {
     const [lastProcessed, setLastProcessed] = useState('');
     const [showScanner, setShowScanner] = useState(false);
     const [activeUnit, setActiveUnit] = useState(null);
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
     const [destinationModal, setDestinationModal] = useState({
         isOpen: false,
         pendingData: null,
@@ -590,6 +625,7 @@ export const StationExecutionView = ({ stationId, project, user }) => {
     const [showStationConfig, setShowStationConfig] = useState(false);
 
     const projectCategory = getProjectCategory(project);
+    const isAdvancedEligible = projectCategory === 'Peripherals' || projectCategory === 'Inward QC';
     const stations = projectCategory === 'Device' ? DEVICE_STATIONS : (projectCategory === 'Peripherals' ? PERIPHERAL_STATIONS : (projectCategory === 'Calculator' ? CALCULATOR_UI_STATIONS : INWARD_QC_STATIONS));
     const selectedStation = stations.find(s => s.id === stationId);
     const permitted = selectedStation && hasAccess(user, project, selectedStation.name);
@@ -753,6 +789,33 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                             scannerActive={true}
                             backendOnline={true}
                             stationStatus="Operational"
+                            beforeLiveMes={
+                                isAdvancedEligible ? (
+                                    <button
+                                        type="button"
+                                        id="station-header-advanced-btn"
+                                        onClick={() => setIsAdvancedOpen(prev => !prev)}
+                                        className={`terminal-status-pill ${isAdvancedOpen ? 'online' : 'standby'}`}
+                                        title="Advanced Station Workflows (Approved FG & Commit Rejection)"
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: isAdvancedOpen ? '1px solid rgba(16, 185, 129, 0.6)' : '1px solid var(--border-color, #e5e7eb)',
+                                            background: isAdvancedOpen ? 'var(--success-bg, rgba(16, 185, 129, 0.15))' : 'var(--bg-card, #ffffff)',
+                                            color: isAdvancedOpen ? 'var(--success, #059669)' : 'var(--text-primary, #111827)',
+                                            fontWeight: 700,
+                                            gap: '5px',
+                                            padding: '3px 11px',
+                                            fontSize: '0.78rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        <Sparkles size={13} style={{ color: isAdvancedOpen ? 'var(--success, #059669)' : 'var(--primary, #16a34a)' }} />
+                                        <span>Advanced</span>
+                                    </button>
+                                ) : null
+                            }
                             extraMeta={
                                 <button
                                     type="button"
@@ -778,71 +841,86 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                             }
                         />
 
-                        {/* Screen Type A: Scan / Serial Entry Terminal */}
-                        {!isProcessing && selectedStation.id !== 1 ? (
+                        {isAdvancedEligible && isAdvancedOpen ? (
+                            <StationAdvancedModule
+                                project={project}
+                                station={selectedStation}
+                                user={user}
+                                onBackToStation={() => setIsAdvancedOpen(false)}
+                                getDisplayName={getDisplayName}
+                                validateAdvancedUnit={validateAdvancedUnit}
+                                executeAdvancedFGApproval={executeAdvancedFGApproval}
+                                executeAdvancedRejection={executeAdvancedRejection}
+                            />
+                        ) : (
                             <>
-                                <SerialEntryTerminal
-                                    scannedId={scannedId}
-                                    setScannedId={setScannedId}
-                                    onSubmit={handleScan}
-                                    onCameraScanClick={() => setShowScanner(true)}
-                                    isValidating={isValidating}
-                                    errorMessage={errorMessage}
-                                    activeUnit={activeUnit}
-                                    onUnhold={async () => {
-                                        if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
-                                            const res = await unholdCalculatorSerial(activeUnit.id);
-                                            if (res.success) {
-                                                alert(`Unit "${activeUnit.id}" has been unheld.`);
-                                                handleReset();
-                                            } else {
-                                                alert(`Unhold error: ${res.message}`);
-                                            }
-                                        }
-                                    }}
-                                    canUnhold={user?.role === 'Admin' || user?.role === 'Super Admin' || hasAccess(user, 'Calculator', activeUnit?.holdStation)}
-                                    unholdStation={activeUnit?.holdStation}
-                                    lastProcessed={lastProcessed}
-                                    stationName={getDisplayName('stations', selectedStation.name)}
-                                    projectName={getDisplayName('projects', project)}
-                                    terminalId={selectedStation.id}
-                                />
+                                {/* Screen Type A: Scan / Serial Entry Terminal */}
+                                {!isProcessing && selectedStation.id !== 1 ? (
+                                    <>
+                                        <SerialEntryTerminal
+                                            scannedId={scannedId}
+                                            setScannedId={setScannedId}
+                                            onSubmit={handleScan}
+                                            onCameraScanClick={() => setShowScanner(true)}
+                                            isValidating={isValidating}
+                                            errorMessage={errorMessage}
+                                            activeUnit={activeUnit}
+                                            onUnhold={async () => {
+                                                if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
+                                                    const res = await unholdCalculatorSerial(activeUnit.id);
+                                                    if (res.success) {
+                                                        alert(`Unit "${activeUnit.id}" has been unheld.`);
+                                                        handleReset();
+                                                    } else {
+                                                        alert(`Unhold error: ${res.message}`);
+                                                    }
+                                                }
+                                            }}
+                                            canUnhold={user?.role === 'Admin' || user?.role === 'Super Admin' || hasAccess(user, 'Calculator', activeUnit?.holdStation)}
+                                            unholdStation={activeUnit?.holdStation}
+                                            lastProcessed={lastProcessed}
+                                            stationName={getDisplayName('stations', selectedStation.name)}
+                                            projectName={getDisplayName('projects', project)}
+                                            terminalId={selectedStation.id}
+                                        />
 
-                                {showScanner && (
-                                    <QRScanner
-                                        onScan={(code) => setScannedId(code.toUpperCase().replace(/\//g, '-'))}
-                                        onClose={() => setShowScanner(false)}
-                                    />
+                                        {showScanner && (
+                                            <QRScanner
+                                                onScan={(code) => setScannedId(code.toUpperCase().replace(/\//g, '-'))}
+                                                onClose={() => setShowScanner(false)}
+                                            />
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="animate-fade-in" style={{ width: '100%' }}>
+                                        {projectCategory === 'Calculator' && selectedStation.id !== 1 ? (
+                                            <CalculatorStationForm
+                                                key={`${selectedStation.id}-${scannedId}`}
+                                                project={project}
+                                                station={selectedStation}
+                                                unitId={scannedId}
+                                                unitData={activeUnit}
+                                                user={user}
+                                                onComplete={handleComplete}
+                                                onReset={handleReset}
+                                                getDisplayName={getDisplayName}
+                                            />
+                                        ) : (
+                                            <StationForm
+                                                key={`${selectedStation.id}-${scannedId}`}
+                                                project={project}
+                                                station={selectedStation}
+                                                unitId={scannedId || 'BATCH'}
+                                                unitData={activeUnit}
+                                                onComplete={handleComplete}
+                                                onBulkComplete={() => { setLastProcessed("BATCH"); setShowSuccess(true); }}
+                                                onReset={handleReset}
+                                                getDisplayName={getDisplayName}
+                                            />
+                                        )}
+                                    </div>
                                 )}
                             </>
-                        ) : (
-                            <div className="animate-fade-in" style={{ width: '100%' }}>
-                                {projectCategory === 'Calculator' && selectedStation.id !== 1 ? (
-                                    <CalculatorStationForm
-                                        key={`${selectedStation.id}-${scannedId}`}
-                                        project={project}
-                                        station={selectedStation}
-                                        unitId={scannedId}
-                                        unitData={activeUnit}
-                                        user={user}
-                                        onComplete={handleComplete}
-                                        onReset={handleReset}
-                                        getDisplayName={getDisplayName}
-                                    />
-                                ) : (
-                                    <StationForm
-                                        key={`${selectedStation.id}-${scannedId}`}
-                                        project={project}
-                                        station={selectedStation}
-                                        unitId={scannedId || 'BATCH'}
-                                        unitData={activeUnit}
-                                        onComplete={handleComplete}
-                                        onBulkComplete={() => { setLastProcessed("BATCH"); setShowSuccess(true); }}
-                                        onReset={handleReset}
-                                        getDisplayName={getDisplayName}
-                                    />
-                                )}
-                            </div>
                         )}
                     </>
                 )}
@@ -1259,12 +1337,17 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
             return station.id === 6 ? PACKAGING_CHECKLIST : INSPECTION_CHECKLIST;
         }
         if (projectCategory === 'Peripherals' && station.id === 2) {
-            if (unitData?.details?.category === 'Scanner') {
+            const cat = unitData?.details?.category;
+            if (cat === 'Scanner') {
                 return SCANNER_QC_CHECKLIST;
             }
-            if (unitData?.details?.category !== 'Printer') {
-                return NON_PRINTER_QC_CHECKLIST;
+            if (cat === 'External Keyboard') {
+                return EXTERNAL_KEYBOARD_QC_CHECKLIST;
             }
+            if (cat === 'Printer' || cat === 'Label Printer') {
+                return PERIPHERAL_QC_CHECKLIST;
+            }
+            return NON_PRINTER_QC_CHECKLIST;
         }
         return PERIPHERAL_QC_CHECKLIST;
     }, [projectCategory, station.id, unitData]);
@@ -1596,12 +1679,12 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                                     <input required placeholder="e.g. Pax A920" value={formData.details.model || ''} onChange={e => setFormData({ ...formData, details: { ...formData.details, model: e.target.value } })} />
                                 </div>
 
-                                {project === 'Peripherals' && (
+                                {(project === 'Peripherals' || projectCategory === 'Peripherals') && (
                                     <div className="input-field">
                                         <label>Category</label>
                                         <select required value={formData.details.category || ''} onChange={e => setFormData({ ...formData, details: { ...formData.details, category: e.target.value } })}>
                                             <option value="">Select Category...</option>
-                                            {['Printer', 'Charger', 'Cable', 'Scanner', 'Others'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                            {PERIPHERAL_CATEGORIES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                         </select>
                                     </div>
                                 )}

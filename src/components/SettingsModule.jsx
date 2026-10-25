@@ -75,7 +75,6 @@ export const UserControlSection = ({ user }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddUser, setShowAddUser] = useState(false);
     const [editUser, setEditUser] = useState(null);
-    const [showPasswords, setShowPasswords] = useState({});
     const [newUser, setNewUser] = useState({ id: '', name: '', password: '', role: 'Operator', stations: [] });
     const [activeTab, setActiveTab] = useState('users');
 
@@ -276,7 +275,7 @@ export const UserControlSection = ({ user }) => {
                                     </div>
                                     <div className="input-field">
                                         <label>Password</label>
-                                        <input required type="password" placeholder="Set initial password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+                                        <input required type="password" placeholder="Set initial password (min 8 chars)" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
                                     </div>
                                     <div className="input-field">
                                         <label>Role</label>
@@ -330,8 +329,8 @@ export const UserControlSection = ({ user }) => {
                                         <input required value={editUser.name} onChange={e => setEditUser({ ...editUser, name: e.target.value })} />
                                     </div>
                                     <div className="input-field">
-                                        <label>Password</label>
-                                        <input required value={editUser.password} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
+                                        <label>New Password (optional)</label>
+                                        <input type="password" placeholder="Leave blank to keep unchanged (min 8 chars)" value={editUser.password || ''} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
                                     </div>
                                     <div className="input-field">
                                         <label>Role</label>
@@ -401,37 +400,17 @@ export const UserControlSection = ({ user }) => {
                                                         title="Edit User"
                                                         style={{ padding: '0.35rem' }}
                                                         onClick={() => {
-                                                            setEditUser({ ...u, oldId: u.id });
+                                                            setEditUser({ ...u, oldId: u.id, password: '' });
                                                             setShowAddUser(false);
                                                             window.scrollTo({ top: 0, behavior: 'smooth' });
                                                         }}
                                                     >
                                                         <Edit3 size={14} />
                                                     </button>
-                                                    <button
-                                                        className="btn-ghost"
-                                                        title="Toggle password visibility"
-                                                        style={{ padding: '0.35rem' }}
-                                                        onClick={() => setShowPasswords(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
-                                                    >
-                                                        {showPasswords[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                                    </button>
                                                     <button className="btn-ghost" title="Delete" style={{ padding: '0.35rem', color: 'var(--error)' }} onClick={() => handleDeleteUser(u.id)} disabled={u.id === user.id}>
                                                         <Trash2 size={14} />
                                                     </button>
-
                                                 </div>
-                                                {showPasswords[u.id] && (
-                                                    <div className="text-mono text-xs" style={{
-                                                        marginTop: '0.25rem',
-                                                        padding: '0.25rem 0.5rem',
-                                                        background: 'var(--bg-input)',
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        border: '1px solid var(--border)'
-                                                    }}>
-                                                        {u.password || '•••••'}
-                                                    </div>
-                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -549,12 +528,22 @@ export const MaintenanceSection = ({ user, initialTab = 'controls' }) => {
                         return;
                     }
 
-                    if (window.confirm("ARE YOU SURE? This will permanently delete matching records.")) {
-                        const result = await purgeData(filters);
-                        alert(`Purge complete: ${result.count} records deleted.`);
-                        setPurgeFilters({ project: '', station: '', serial: '' });
-                        setPurgeTarget('');
+                    if (filters === 'all') {
+                        const typed = window.prompt("DANGER: You are about to purge ALL device records. Type 'PURGE' to confirm:");
+                        if (typed !== 'PURGE') {
+                            alert("Purge cancelled: confirmation phrase did not match.");
+                            setIsProcessing(false);
+                            return;
+                        }
+                    } else if (!window.confirm("ARE YOU SURE? This will permanently delete matching records.")) {
+                        setIsProcessing(false);
+                        return;
                     }
+
+                    const result = await purgeData(filters);
+                    alert(`Purge complete: ${result.count} records deleted.`);
+                    setPurgeFilters({ project: '', station: '', serial: '' });
+                    setPurgeTarget('');
                     break;
                 case 'save_names':
                     await updateSystemNames(editNames);

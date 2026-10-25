@@ -4,7 +4,7 @@
  * into the Firestore 'audit_logs' collection.
  */
 
-import { db, doc, setDoc, collection, query, orderBy, limit, getDocs, where } from '../firebase.js';
+import { db, doc, setDoc, collection, query, orderBy, limit, getDocs, where, auth } from '../firebase.js';
 
 export const AUDIT_ACTIONS = {
     // Project
@@ -90,12 +90,18 @@ export const logAdminAction = async ({
     try {
         const auditId = generateAuditId();
         const timestamp = new Date().toISOString();
+        const actorId = auth.currentUser?.uid || actor?.id || actor?.uid;
+
+        if (!actorId) {
+            console.error('CRITICAL: Cannot record audit log without authenticated user (actorId missing).');
+            return { success: false, error: 'Authentication required for audit log' };
+        }
 
         const auditEntry = {
             id: auditId,
             timestamp,
-            actorId: actor?.id || actor?.uid || 'UNKNOWN',
-            actorName: actor?.name || actor?.id || 'System Administrator',
+            actorId: String(actorId),
+            actorName: actor?.name || actor?.id || String(actorId),
             actorRole: actor?.role || 'Admin',
             action,
             entity,
@@ -112,7 +118,7 @@ export const logAdminAction = async ({
         await setDoc(auditRef, auditEntry);
         return { success: true, auditId };
     } catch (err) {
-        console.error('Failed to record administrative audit log:', err);
+        console.error('Failed to record administrative audit log to Firestore:', err);
         // Fail-safe: do not crash the app, but return error
         return { success: false, error: err.message };
     }
