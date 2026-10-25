@@ -77,6 +77,12 @@ firebase deploy --only hosting
 ```
 *(Alternatively, merge to `main` to trigger the GitHub Actions workflow)*.
 
+> [!NOTE]
+> **CI Dependency Supply Chain (xlsx):**
+> `package.json` installs the official SheetJS 0.20.3 package from `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
+> In automated CI environments or restricted corporate build servers without outbound internet access to the SheetJS CDN, `npm ci` may fail.
+> **Recommendation:** Vendor the tarball directly into the repository by saving it to `vendor/xlsx-0.20.3.tgz` and updating `package.json` to `"xlsx": "file:vendor/xlsx-0.20.3.tgz"`.
+
 ---
 
 ### Step 4: Lazy Migration Execution & Verification
@@ -87,7 +93,7 @@ Once the new client and functions are live:
      - Verifies the legacy password using timing-safe comparison.
      - Derives a salted `crypto.scrypt` hash with secure parameters.
      - Saves the hash and metadata into the server-only `user_secrets/{uid}` collection.
-     - Deletes the `password` field from the `users/{uid}` document in an atomic batch.
+     - Deletes the `password` field from the `users/{uid}` document in an atomic batch and sets `mustChangePassword: true`.
      - Sets custom role claims in the generated Firebase Auth token.
 2. **Run the Read-Only Migration Verification Script:**
    ```bash
@@ -123,11 +129,23 @@ firebase deploy --only firestore:rules,storage
 ---
 
 ### Step 6: CSP Transition to Enforcing (Phase 5)
-1. Monitor browser console logs and hosting metrics for 3–5 operational days under `Content-Security-Policy-Report-Only`.
-2. Inspect if any valid external domains report violations.
-3. Once zero unexpected reports occur, edit `firebase.json`:
+`Content-Security-Policy-Report-Only` does not log violations to a remote server without a dedicated reporting endpoint. Before switching to enforcing mode:
+1. **Deploy to a staging / preview channel:**
+   ```bash
+   firebase hosting:channel:deploy preview-hardening
+   ```
+2. **Comprehensive manual screen verification:**
+   Open the generated preview URL in Google Chrome with DevTools Console open (`F12`), and exercise every operational flow:
+   - User authentication and role redirection.
+   - Operator station processing and barcode scanning.
+   - Checkpoint proof image upload (JPEG, PNG, WebP) to Firebase Storage.
+   - BAAN inventory inward, location management, and part requests.
+   - Analytics dashboard rendering with bundled Chart.js.
+   - QR code scanner activation (`html5-qrcode`).
+3. **Verify:** Confirm that **zero CSP violation warnings** appear in the DevTools console.
+4. **Switch to Enforcing:** Once verified without violation warnings, edit `firebase.json`:
    - Change key `"Content-Security-Policy-Report-Only"` to `"Content-Security-Policy"`.
-4. Redeploy hosting:
+5. **Redeploy hosting to live:**
    ```bash
    firebase deploy --only hosting
    ```
@@ -136,8 +154,9 @@ firebase deploy --only firestore:rules,storage
 
 ### Step 7: Mandatory Post-Migration Password Reset
 1. Instruct each operator and administrator to use the new **Change Password** feature in their Profile / User Control view (`changeOwnPassword`).
-2. For any dormant or unattended accounts, an Admin should trigger a password reset via the Admin Users panel (`adminResetPassword`).
-3. Explicitly notify all team members:
+2. When users log in following lazy migration, the `mustChangePassword: true` flag automatically forces them to set a new password before accessing system tools.
+3. For any dormant or unattended accounts, an Admin should trigger a password reset via the Admin Users panel (`adminResetPassword`).
+4. Explicitly notify all team members:
    > *"Because legacy passwords were historically stored in an unauthenticated database, any user who used their MES password for email, ERP, or other enterprise accounts must change those passwords immediately."*
 
 ---
@@ -185,3 +204,20 @@ firebase deploy --only firestore:rules,storage
 
 # 2. Check Firestore audit logs to identify the exact blocked query/path
 ```
+
+---
+
+## Known Residual Risks
+
+While the hardening implemented across Phases 1 through 8 secures privileged Cloud Functions, enforces Firebase Auth session integrity, eliminates plaintext credential leaks, and seals the database, the following residual architectural risks are formally acknowledged:
+
+1. **Client-Side Non-Calculator Device Modifications:**
+   - Any signed-in user can still create/update any non-Calculator `devices` document directly (including rewriting `history`), because station processing for those projects is still client-side.
+   - **Recommended Next Phase:** Move `processUnit`, `bulkProcessUnits`, `executeAdminMovement`, and the advanced FG/rejection flows into Cloud Functions, then make `devices` fully read-only for clients.
+2. **BAAN Inventory Broad Authenticated Writes:**
+   - BAAN collections (`baan_parts`, `baan_batches`, `baan_part_requests`, `baan_part_issuance`, `baan_locations`, `baan_inventory_movements`, `baan_inward_logs`) allow create/update by any signed-in user. This is required because operators consume and request parts in real time from factory terminals.
+3. **User ID Brute-Force Lockout Surface:**
+   - Login lockout is per user ID (after 5 failed attempts, locked for 15 minutes). Because operator user IDs follow known sequences (e.g., `OP001`), anyone with network access can temporarily lock a known ID for 15 minutes by sending 5 incorrect login requests.
+4. **Role Claims Refresh Latency:**
+   - Role claims refresh only at login or on token refresh. If an administrator demotes an Admin to Operator, the client could theoretically retain cached claims until the ID token expires (up to 1 hour). This is mitigated by server-side `auth.revokeRefreshTokens(uid)` implemented in `adminUpsertUser`, `adminResetPassword`, and `adminDeleteUser`, which invalidates the refresh session.
+

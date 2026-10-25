@@ -160,4 +160,83 @@ describe('Firestore Security Rules', () => {
     await assertFails(getDoc(doc(db, 'secret_passwords', 'item1')));
     await assertFails(setDoc(doc(db, 'random_data', 'item1'), { foo: 'bar' }));
   });
+
+  // 12. Operator cannot write users
+  test('Operator cannot write users', async () => {
+    const op = testEnv.authenticatedContext('operator1', { role: 'Operator' });
+    await assertFails(setDoc(doc(op.firestore(), 'users', 'operator1'), { name: 'New Name' }));
+    await assertFails(setDoc(doc(op.firestore(), 'users', 'otherUser'), { name: 'Hacked' }));
+  });
+
+  // 13. Operator cannot read another user's users doc but can read their own
+  test("Operator cannot read another user's users doc but can read their own", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users', 'op1'), { name: 'Op One', role: 'Operator' });
+      await setDoc(doc(context.firestore(), 'users', 'op2'), { name: 'Op Two', role: 'Operator' });
+    });
+
+    const op1 = testEnv.authenticatedContext('op1', { role: 'Operator' });
+    await assertSucceeds(getDoc(doc(op1.firestore(), 'users', 'op1')));
+    await assertFails(getDoc(doc(op1.firestore(), 'users', 'op2')));
+  });
+
+  // 14. Operator cannot read audit_logs
+  test('Operator cannot read audit_logs', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'audit_logs', 'log-123'), {
+        action: 'UNIT_PROCESSED',
+        actorId: 'admin1',
+      });
+    });
+
+    const op = testEnv.authenticatedContext('operator1', { role: 'Operator' });
+    await assertFails(getDoc(doc(op.firestore(), 'audit_logs', 'log-123')));
+
+    const admin = testEnv.authenticatedContext('admin1', { role: 'Admin' });
+    await assertSucceeds(getDoc(doc(admin.firestore(), 'audit_logs', 'log-123')));
+  });
+
+  // 15. Ticket create only for own uid with status Pending
+  test('Ticket create only for own uid with status Pending', async () => {
+    const op1 = testEnv.authenticatedContext('op1', { role: 'Operator' });
+
+    // Valid ticket: own uid as doc id + userId, and status Pending
+    await assertSucceeds(
+      setDoc(doc(op1.firestore(), 'tickets', 'op1'), {
+        userId: 'op1',
+        status: 'Pending',
+        requestedAt: new Date().toISOString(),
+      })
+    );
+
+    // Invalid ticket: status Approved
+    await assertFails(
+      setDoc(doc(op1.firestore(), 'tickets', 'op1'), {
+        userId: 'op1',
+        status: 'Approved',
+      })
+    );
+
+    // Invalid ticket: creating ticket for another user's uid
+    await assertFails(
+      setDoc(doc(op1.firestore(), 'tickets', 'op2'), {
+        userId: 'op2',
+        status: 'Pending',
+      })
+    );
+  });
+
+  // 16. Operator cannot write projects, stations_master, or roles
+  test('Operator cannot write projects, stations_master, or roles', async () => {
+    const op = testEnv.authenticatedContext('operator1', { role: 'Operator' });
+    await assertFails(setDoc(doc(op.firestore(), 'projects', 'proj-1'), { name: 'Hacked' }));
+    await assertFails(setDoc(doc(op.firestore(), 'stations_master', 'st-1'), { name: 'Hacked' }));
+    await assertFails(setDoc(doc(op.firestore(), 'roles', 'role-1'), { name: 'Hacked' }));
+  });
+
+  // 17. Admin can write projects
+  test('Admin can write projects', async () => {
+    const admin = testEnv.authenticatedContext('admin1', { role: 'Admin' });
+    await assertSucceeds(setDoc(doc(admin.firestore(), 'projects', 'proj-1'), { name: 'New Project' }));
+  });
 });

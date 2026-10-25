@@ -12,6 +12,7 @@ import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
 import BaanModule from './components/BaanModule';
 import AdminLayout from './components/admin/AdminLayout';
+import ForceChangePassword from './components/ForceChangePassword';
 
 const AppContent = () => {
   const { store } = useCQA();
@@ -83,7 +84,8 @@ const AppContent = () => {
           id: uid,
           name: docData.name || uid,
           role: docData.role || 'Operator',
-          stations: Array.isArray(docData.stations) ? docData.stations : []
+          stations: Array.isArray(docData.stations) ? docData.stations : [],
+          mustChangePassword: docData.mustChangePassword === true
         };
 
         setUser(cleanUserData);
@@ -166,6 +168,21 @@ const AppContent = () => {
 
   // ─── Login Screen ───
   if (!user) return <Login onLogin={setUser} />;
+
+  // ─── Mandatory Password Change Gate ───
+  if (user?.mustChangePassword) {
+    return (
+      <ForceChangePassword
+        user={user}
+        onPasswordChanged={() => {
+          const updated = { ...user, mustChangePassword: false };
+          setUser(updated);
+          localStorage.setItem('cqa_user', JSON.stringify(updated));
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
 
   // ─── Maintenance Lock ───
   const isMaintenanceMode = store.settings?.maintenanceMode;

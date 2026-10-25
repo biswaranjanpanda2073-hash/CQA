@@ -85,6 +85,24 @@ function generateAuditId() {
     return `AUD-${dateStr}-${timeStr}-${rand}`;
 }
 
+const SENSITIVE_AUDIT_KEYS = new Set(['password', 'hash', 'salt', 'secret', 'token']);
+
+function sanitizeAuditData(val) {
+    if (val === null || val === undefined) return val;
+    if (typeof val !== 'object') return val;
+    if (Array.isArray(val)) {
+        return val.map(sanitizeAuditData);
+    }
+    const clean = {};
+    for (const [k, v] of Object.entries(val)) {
+        if (SENSITIVE_AUDIT_KEYS.has(k.toLowerCase())) {
+            continue;
+        }
+        clean[k] = sanitizeAuditData(v);
+    }
+    return clean;
+}
+
 async function logAuditServer({
     actorId,
     actorName,
@@ -112,8 +130,8 @@ async function logAuditServer({
             entity,
             entityId: String(entityId || 'N/A'),
             project: project || null,
-            previousValue: previousValue ? JSON.parse(JSON.stringify(previousValue)) : null,
-            newValue: newValue ? JSON.parse(JSON.stringify(newValue)) : null,
+            previousValue: previousValue ? sanitizeAuditData(JSON.parse(JSON.stringify(previousValue))) : null,
+            newValue: newValue ? sanitizeAuditData(JSON.parse(JSON.stringify(newValue))) : null,
             reason: reason || 'Administrative modification',
             remarks: remarks || '',
             status
@@ -341,7 +359,7 @@ exports.loginAndGetToken = onCall(async (request) => {
             failedAttempts: 0,
             lockedUntil: null
         }, { merge: true });
-        batch.update(userDoc.ref, { password: FieldValue.delete() });
+        batch.update(userDoc.ref, { password: FieldValue.delete(), mustChangePassword: true });
         await batch.commit();
     } else {
         // Reset brute-force counter if needed
@@ -361,10 +379,18 @@ exports.loginAndGetToken = onCall(async (request) => {
     // Generate custom token with role claim (never include password or stations list)
     const token = await auth.createCustomToken(uid, { role: userData.role });
 
+    const mustChange = needsLazyMigration || userData.mustChangePassword === true;
+
     return {
         success: true,
         token,
-        user: { id: uid, name: userData.name, role: userData.role, stations: userData.stations || [] }
+        user: {
+            id: uid,
+            name: userData.name,
+            role: userData.role,
+            stations: userData.stations || [],
+            mustChangePassword: Boolean(mustChange)
+        }
     };
 });
 
@@ -876,24 +902,23 @@ exports.adminUpsertUser = onCall(async (request) => {
         }
     }
 
-    // Handle "ID changed" case (create new + delete old, and move secret)
-    if (oldId && oldId.trim() && oldId.trim() !== targetId) {
-        const cleanOldId = oldId.trim();
+    const isRename = Boolean(oldId && oldId.trim() && oldId.trim() !== targetId);
+    const cleanOldId = isRename ? oldId.trim() : null;
+
+    if (isRename) {
+        // Refuse rename if target ID already exists (B2)
+        if (targetDoc.exists) {
+            throw new HttpsError("already-exists", `Cannot rename: user with ID "${targetId}" already exists.`);
+        }
+
         const oldDoc = await db.collection("users").doc(cleanOldId).get();
-        if (oldDoc.exists) {
-            const oldRole = oldDoc.data().role;
-            if ((oldRole === 'Admin' || oldRole === 'Super Admin') && callerRole !== 'Super Admin') {
-                throw new HttpsError("permission-denied", "Only Super Admin may modify an Admin or Super Admin user.");
-            }
+        if (!oldDoc.exists) {
+            throw new HttpsError("not-found", `User to rename "${cleanOldId}" does not exist.`);
         }
-        // Move secret from oldId to targetId
-        const oldSecretDoc = await db.collection("user_secrets").doc(cleanOldId).get();
-        if (oldSecretDoc.exists) {
-            await db.collection("user_secrets").doc(targetId).set(oldSecretDoc.data());
-            await db.collection("user_secrets").doc(cleanOldId).delete();
+        const oldRole = oldDoc.data().role;
+        if ((oldRole === 'Admin' || oldRole === 'Super Admin') && callerRole !== 'Super Admin') {
+            throw new HttpsError("permission-denied", "Only Super Admin may modify an Admin or Super Admin user.");
         }
-        await db.collection("users").doc(cleanOldId).delete();
-        try { await auth.deleteUser(cleanOldId); } catch (e) {}
     }
 
     // Prepare user doc payload (NEVER write password into users doc)
@@ -904,7 +929,54 @@ exports.adminUpsertUser = onCall(async (request) => {
         stations: Array.isArray(stations) ? stations : [],
         updatedAt: new Date().toISOString()
     };
-    await db.collection("users").doc(targetId).set(userPayload, { merge: true });
+
+    let newSecretPayload = null;
+    if (password) {
+        if (typeof password !== 'string' || password.length < 8) {
+            throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+        }
+        const secretPayload = await hashPassword(password);
+        newSecretPayload = {
+            ...secretPayload,
+            failedAttempts: 0,
+            lockedUntil: null
+        };
+    }
+
+    // Atomic batch for user + secret write and old doc deletion (B2)
+    const batch = db.batch();
+
+    if (isRename) {
+        const oldSecretDoc = await db.collection("user_secrets").doc(cleanOldId).get();
+
+        // 1. Write new user document
+        batch.set(db.collection("users").doc(targetId), userPayload);
+
+        // 2. Write new secret document
+        if (newSecretPayload) {
+            batch.set(db.collection("user_secrets").doc(targetId), newSecretPayload);
+        } else if (oldSecretDoc.exists) {
+            batch.set(db.collection("user_secrets").doc(targetId), oldSecretDoc.data());
+        }
+
+        // 3. Delete old user document and old secret document atomically
+        batch.delete(db.collection("users").doc(cleanOldId));
+        if (oldSecretDoc.exists) {
+            batch.delete(db.collection("user_secrets").doc(cleanOldId));
+        }
+    } else {
+        batch.set(db.collection("users").doc(targetId), userPayload, { merge: true });
+        if (newSecretPayload) {
+            batch.set(db.collection("user_secrets").doc(targetId), newSecretPayload, { merge: true });
+        }
+    }
+
+    await batch.commit();
+
+    if (isRename) {
+        try { await auth.revokeRefreshTokens(cleanOldId); } catch (e) {}
+        try { await auth.deleteUser(cleanOldId); } catch (e) {}
+    }
 
     // Sync Auth user displayName
     try {
@@ -914,17 +986,14 @@ exports.adminUpsertUser = onCall(async (request) => {
         await auth.createUser({ uid: targetId, displayName: userPayload.name });
     }
 
-    // Hash any supplied password into user_secrets
-    if (password) {
-        if (typeof password !== 'string' || password.length < 8) {
-            throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+    // B1: Revoke sessions when role or station list changed or password was updated
+    if (targetDoc.exists) {
+        const existingData = targetDoc.data();
+        const roleChanged = existingData.role !== targetRole;
+        const stationsChanged = JSON.stringify(existingData.stations || []) !== JSON.stringify(userPayload.stations);
+        if (roleChanged || stationsChanged || password) {
+            try { await auth.revokeRefreshTokens(targetId); } catch (e) {}
         }
-        const secretPayload = await hashPassword(password);
-        await db.collection("user_secrets").doc(targetId).set({
-            ...secretPayload,
-            failedAttempts: 0,
-            lockedUntil: null
-        }, { merge: true });
     }
 
     await logAuditServer({
@@ -934,8 +1003,8 @@ exports.adminUpsertUser = onCall(async (request) => {
         action: targetDoc.exists ? 'USER_UPDATED' : 'USER_CREATED',
         entity: 'user',
         entityId: targetId,
-        newValue: userPayload,
-        reason: 'Admin user upsert'
+        newValue: sanitizeAuditData(userPayload),
+        reason: isRename ? `Admin renamed user ${cleanOldId} to ${targetId}` : 'Admin user upsert'
     });
 
     return { success: true };
@@ -968,7 +1037,13 @@ exports.adminDeleteUser = onCall(async (request) => {
 
     await db.collection("users").doc(targetId).delete();
     await db.collection("user_secrets").doc(targetId).delete();
+
+    // B1: Revoke refresh tokens before delete
+    try { await auth.revokeRefreshTokens(targetId); } catch (e) {}
     try { await auth.deleteUser(targetId); } catch (e) {}
+
+    const rawPrevious = targetDoc.exists ? targetDoc.data() : null;
+    const sanitizedPrevious = rawPrevious ? sanitizeAuditData(rawPrevious) : null;
 
     await logAuditServer({
         actorId: caller.uid,
@@ -977,12 +1052,38 @@ exports.adminDeleteUser = onCall(async (request) => {
         action: 'USER_DEACTIVATED',
         entity: 'user',
         entityId: targetId,
-        previousValue: targetDoc.exists ? targetDoc.data() : null,
+        previousValue: sanitizedPrevious,
         reason: 'Admin user deleted'
     });
 
     return { success: true };
 });
+
+function generateSecureRandomPassword(length = 14) {
+    const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lowercase = "abcdefghijkmnopqrstuvwxyz";
+    const numbers = "23456789";
+    const symbols = "!@#$%^&*()-_=+";
+    const all = uppercase + lowercase + numbers + symbols;
+
+    const pwd = [
+        uppercase[crypto.randomInt(0, uppercase.length)],
+        lowercase[crypto.randomInt(0, lowercase.length)],
+        numbers[crypto.randomInt(0, numbers.length)],
+        symbols[crypto.randomInt(0, symbols.length)],
+    ];
+
+    for (let i = 4; i < length; i++) {
+        pwd.push(all[crypto.randomInt(0, all.length)]);
+    }
+
+    for (let i = pwd.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(0, i + 1);
+        [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
+    }
+
+    return pwd.join("");
+}
 
 exports.adminResetPassword = onCall(async (request) => {
     const caller = await getCallerUser(request);
@@ -997,8 +1098,15 @@ exports.adminResetPassword = onCall(async (request) => {
     }
     const targetId = id.trim();
 
-    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
-        throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+    let finalPassword = '';
+    if (newPassword && typeof newPassword === 'string' && newPassword.trim()) {
+        const trimmed = newPassword.trim();
+        if (trimmed.length < 8) {
+            throw new HttpsError("invalid-argument", "Password must be at least 8 characters.");
+        }
+        finalPassword = trimmed;
+    } else {
+        finalPassword = generateSecureRandomPassword(14);
     }
 
     const targetDoc = await db.collection("users").doc(targetId).get();
@@ -1009,17 +1117,25 @@ exports.adminResetPassword = onCall(async (request) => {
         }
     }
 
-    const secretPayload = await hashPassword(newPassword);
+    const secretPayload = await hashPassword(finalPassword);
     await db.collection("user_secrets").doc(targetId).set({
         ...secretPayload,
         failedAttempts: 0,
         lockedUntil: null
     }, { merge: true });
 
-    // Clean up any legacy password field on the users doc
+    // Set mustChangePassword: true and delete legacy password field on users doc
+    const userUpdates = {
+        mustChangePassword: true,
+        updatedAt: new Date().toISOString()
+    };
     if (targetDoc.exists && targetDoc.data().password) {
-        await targetDoc.ref.update({ password: FieldValue.delete() }).catch(() => {});
+        userUpdates.password = FieldValue.delete();
     }
+    await db.collection("users").doc(targetId).set(userUpdates, { merge: true });
+
+    // Revoke sessions when credentials change (B1 requirement)
+    try { await auth.revokeRefreshTokens(targetId); } catch (e) {}
 
     await logAuditServer({
         actorId: caller.uid,
@@ -1031,7 +1147,11 @@ exports.adminResetPassword = onCall(async (request) => {
         reason: 'Admin reset password'
     });
 
-    return { success: true };
+    return {
+        success: true,
+        temporaryPassword: finalPassword,
+        password: finalPassword
+    };
 });
 
 exports.changeOwnPassword = onCall(async (request) => {
@@ -1068,8 +1188,14 @@ exports.changeOwnPassword = onCall(async (request) => {
         failedAttempts: 0,
         lockedUntil: null
     }, { merge: true });
-    batch.update(db.collection("users").doc(uid), { password: FieldValue.delete() });
+    batch.update(db.collection("users").doc(uid), {
+        password: FieldValue.delete(),
+        mustChangePassword: FieldValue.delete()
+    });
     await batch.commit();
+
+    // B1: Revoke tokens upon password change
+    try { await auth.revokeRefreshTokens(uid); } catch (e) {}
 
     await logAuditServer({
         actorId: uid,
@@ -1088,7 +1214,7 @@ exports.changeOwnPassword = onCall(async (request) => {
 // 6. PURGE DEVICES (SUPER ADMIN ONLY)
 // ═══════════════════════════════════════════════════════════════
 
-exports.purgeDevices = onCall(async (request) => {
+exports.purgeDevices = onCall({ timeoutSeconds: 300 }, async (request) => {
     const caller = await getCallerUser(request);
     if (caller.data.role !== 'Super Admin') {
         throw new HttpsError("permission-denied", "Super Admin privileges required to purge devices.");

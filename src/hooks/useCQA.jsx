@@ -501,7 +501,8 @@ export const CQAProvider = ({ children }) => {
                 id: returnedUser.id || authUserCred.user.uid,
                 name: returnedUser.name || authUserCred.user.uid,
                 role: returnedUser.role || 'Operator',
-                stations: Array.isArray(returnedUser.stations) ? returnedUser.stations : []
+                stations: Array.isArray(returnedUser.stations) ? returnedUser.stations : [],
+                mustChangePassword: returnedUser.mustChangePassword === true
             };
             // Persist clean session (never store plaintext password)
             localStorage.setItem('cqa_user', JSON.stringify(cleanUser));

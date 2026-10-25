@@ -72,6 +72,24 @@ export const generateAuditId = () => {
     return `AUD-${dateStr}-${timeStr}-${rand}`;
 };
 
+const SENSITIVE_AUDIT_KEYS = new Set(['password', 'hash', 'salt', 'secret', 'token']);
+
+export const sanitizeAuditData = (val) => {
+    if (val === null || val === undefined) return val;
+    if (typeof val !== 'object') return val;
+    if (Array.isArray(val)) {
+        return val.map(sanitizeAuditData);
+    }
+    const clean = {};
+    for (const [k, v] of Object.entries(val)) {
+        if (SENSITIVE_AUDIT_KEYS.has(k.toLowerCase())) {
+            continue;
+        }
+        clean[k] = sanitizeAuditData(v);
+    }
+    return clean;
+};
+
 /**
  * Logs an administrative operation to Firestore.
  */
@@ -107,8 +125,8 @@ export const logAdminAction = async ({
             entity,
             entityId: String(entityId || 'N/A'),
             project: project || null,
-            previousValue: previousValue ? JSON.parse(JSON.stringify(previousValue)) : null,
-            newValue: newValue ? JSON.parse(JSON.stringify(newValue)) : null,
+            previousValue: previousValue ? sanitizeAuditData(JSON.parse(JSON.stringify(previousValue))) : null,
+            newValue: newValue ? sanitizeAuditData(JSON.parse(JSON.stringify(newValue))) : null,
             reason: reason || 'Administrative modification',
             remarks: remarks || '',
             status

@@ -158,15 +158,22 @@ export const UserControlSection = ({ user }) => {
             return;
         }
 
-        const newPw = window.prompt('Enter new password for user (Leave blank for auto-gen):');
-        if (newPw === null) return; // Cancelled
+        const inputPw = window.prompt('Enter new password for user (min 8 characters), or leave blank for secure auto-generation:');
+        if (inputPw === null) return; // Cancelled
 
-        const finalPw = newPw.trim() || 'CQA' + Math.floor(Math.random() * 9000 + 1000);
+        const trimmed = inputPw.trim();
+        if (trimmed && trimmed.length < 8) {
+            alert('Password must be at least 8 characters long.');
+            return;
+        }
 
-        if (window.confirm(`Assign password "${finalPw}" and approve request?`)) {
-            await resetUserPassword(ticketId, finalPw);
+        try {
+            const res = await resetUserPassword(ticketId, trimmed || undefined);
+            const assignedPw = res?.temporaryPassword || res?.password || trimmed;
             await updateTicketStatus(ticketId, 'Approved');
-            alert(`Password updated to: ${finalPw}`);
+            alert(`Password reset successfully approved for user "${ticketId}".\n\nTemporary Password: ${assignedPw}\n\n(The user will be required to change this password on next login.)`);
+        } catch (err) {
+            alert(`Failed to reset password: ${err.message || 'Unknown error'}`);
         }
     };
 
