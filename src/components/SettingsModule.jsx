@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
 import UnitSerialConfig from './UnitSerialConfig';
+import { auth, signOut } from '../firebase';
 
 /* ═══════════════════════════════════
    USER CONTROL (Admin)
@@ -140,11 +141,20 @@ export const UserControlSection = ({ user }) => {
             await updateUser(editUser.oldId, editUser);
             // If the admin edited their own record
             if (user && (editUser.oldId === user.id || editUser.id === user.id)) {
-                if (editUser.password) {
-                    const reauth = await authenticateUser(editUser.id, editUser.password);
-                    if (!reauth?.success) {
-                        alert('Your user credentials were updated. Please log in with your new password.');
-                        const { auth, signOut } = await import('../firebase');
+                const roleChanged = editUser.role !== user.role;
+                const stationsChanged = JSON.stringify([...(editUser.stations || [])].sort()) !== JSON.stringify([...(user.stations || [])].sort());
+                const idChanged = editUser.id !== user.id;
+                const pwChanged = Boolean(editUser.password);
+
+                if (pwChanged || roleChanged || stationsChanged || idChanged) {
+                    if (pwChanged) {
+                        const reauth = await authenticateUser(editUser.id, editUser.password);
+                        if (!reauth?.success) {
+                            alert('Your user credentials were updated. Please log in with your new password.');
+                            await signOut(auth);
+                        }
+                    } else {
+                        alert('Your user permissions (role/station access) were updated. Please log in again to refresh your session.');
                         await signOut(auth);
                     }
                 }

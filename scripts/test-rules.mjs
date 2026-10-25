@@ -28,7 +28,7 @@ if (portInUse) {
   child = spawn(nodeCmd, ['tests/firestore.rules.test.js'], { stdio: 'inherit', env });
 } else {
   const npxCmd = isWin ? 'npx.cmd' : 'npx';
-  const scriptArg = isWin ? '"node tests/firestore.rules.test.js"' : 'node tests/firestore.rules.test.js';
+  const scriptArg = '"node tests/firestore.rules.test.js"';
   child = spawn(
     npxCmd,
     ['firebase', 'emulators:exec', '--only', 'firestore', scriptArg],

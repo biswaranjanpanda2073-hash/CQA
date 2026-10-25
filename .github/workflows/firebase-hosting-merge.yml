@@ -28,9 +28,6 @@ jobs:
       - name: Build Application
         run: npm run build
       - name: Deploy to Firebase Hosting
-        # TODO: pin to verified SHA once confirmed by project owner
-        uses: w9jds/firebase-action@master
-        with:
-          args: deploy --only hosting
+        run: npx firebase deploy --only hosting --project cqa-mes --non-interactive
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
