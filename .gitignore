@@ -31,3 +31,5 @@ serviceAccountKey*.json
 .env.*.local
 !.env.example
 *.zip
+backups/
+backup_*/
