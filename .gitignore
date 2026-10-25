@@ -26,5 +26,8 @@ dist-ssr
 # Security & Secrets
 serviceAccountKey*.json
 *.pem
-.env*
+.env
+.env.local
+.env.*.local
+!.env.example
 *.zip
