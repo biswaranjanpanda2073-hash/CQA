@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer, limit } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
-import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getFirestore, connectFirestoreEmulator, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer, limit } from "firebase/firestore";
+import { getStorage, connectStorageEmulator, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
+import { getAuth, connectAuthEmulator, signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFunctions, connectFunctionsEmulator, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
     apiKey: "AIzaSyD53509zOsLXne2Hb9mEWjBEpvYyRl-VNw",
@@ -19,6 +19,14 @@ const db = getFirestore(app);
 const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app);
+
+if (import.meta.env.VITE_USE_EMULATOR === 'true') {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+    connectStorageEmulator(storage, '127.0.0.1', 9199);
+    console.log('[Firebase] Connected to local Firebase Emulators (100% isolated sandbox)');
+}
 
 // Collection references
 const devicesCol = collection(db, 'devices');
