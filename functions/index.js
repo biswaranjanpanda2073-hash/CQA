@@ -905,13 +905,14 @@ exports.adminUpsertUser = onCall(async (request) => {
     const isRename = Boolean(oldId && oldId.trim() && oldId.trim() !== targetId);
     const cleanOldId = isRename ? oldId.trim() : null;
 
+    let oldDoc = null;
     if (isRename) {
         // Refuse rename if target ID already exists (B2)
         if (targetDoc.exists) {
             throw new HttpsError("already-exists", `Cannot rename: user with ID "${targetId}" already exists.`);
         }
 
-        const oldDoc = await db.collection("users").doc(cleanOldId).get();
+        oldDoc = await db.collection("users").doc(cleanOldId).get();
         if (!oldDoc.exists) {
             throw new HttpsError("not-found", `User to rename "${cleanOldId}" does not exist.`);
         }
@@ -943,14 +944,16 @@ exports.adminUpsertUser = onCall(async (request) => {
         };
     }
 
-    // Atomic batch for user + secret write and old doc deletion (B2)
+    // Atomic batch for user + secret write and old doc deletion (B2 & Item 5)
     const batch = db.batch();
+    const finalUserPayload = isRename ? { ...(oldDoc?.data() || {}), ...userPayload } : userPayload;
+    delete finalUserPayload.password;
 
     if (isRename) {
         const oldSecretDoc = await db.collection("user_secrets").doc(cleanOldId).get();
 
-        // 1. Write new user document
-        batch.set(db.collection("users").doc(targetId), userPayload);
+        // 1. Write new user document carrying over existing fields (mustChangePassword, createdAt, etc.)
+        batch.set(db.collection("users").doc(targetId), finalUserPayload);
 
         // 2. Write new secret document
         if (newSecretPayload) {
@@ -1003,7 +1006,7 @@ exports.adminUpsertUser = onCall(async (request) => {
         action: targetDoc.exists ? 'USER_UPDATED' : 'USER_CREATED',
         entity: 'user',
         entityId: targetId,
-        newValue: sanitizeAuditData(userPayload),
+        newValue: sanitizeAuditData(finalUserPayload),
         reason: isRename ? `Admin renamed user ${cleanOldId} to ${targetId}` : 'Admin user upsert'
     });
 

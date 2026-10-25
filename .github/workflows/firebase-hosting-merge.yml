@@ -28,8 +28,8 @@ jobs:
       - name: Build Application
         run: npm run build
       - name: Deploy to Firebase Hosting
-        # Pinned to master commit a3f8db378f69597e99644eb9c8dfefe0bcce6e1d for CI supply chain security
-        uses: w9jds/firebase-action@a3f8db378f69597e99644eb9c8dfefe0bcce6e1d
+        # TODO: pin to verified SHA once confirmed by project owner
+        uses: w9jds/firebase-action@master
         with:
           args: deploy --only hosting
         env:

@@ -218,6 +218,8 @@ While the hardening implemented across Phases 1 through 8 secures privileged Clo
    - BAAN collections (`baan_parts`, `baan_batches`, `baan_part_requests`, `baan_part_issuance`, `baan_locations`, `baan_inventory_movements`, `baan_inward_logs`) allow create/update by any signed-in user. This is required because operators consume and request parts in real time from factory terminals.
 3. **User ID Brute-Force Lockout Surface:**
    - Login lockout is per user ID (after 5 failed attempts, locked for 15 minutes). Because operator user IDs follow known sequences (e.g., `OP001`), anyone with network access can temporarily lock a known ID for 15 minutes by sending 5 incorrect login requests.
-4. **Role Claims Refresh Latency:**
-   - Role claims refresh only at login or on token refresh. If an administrator demotes an Admin to Operator, the client could theoretically retain cached claims until the ID token expires (up to 1 hour). This is mitigated by server-side `auth.revokeRefreshTokens(uid)` implemented in `adminUpsertUser`, `adminResetPassword`, and `adminDeleteUser`, which invalidates the refresh session.
+4. **Role Claims Refresh Latency & Session Lifespan:**
+   - Firestore security rules evaluate claims directly from the already-issued Firebase Auth ID token, which remains valid for up to 1 hour after issuance. Consequently, a demoted admin keeps admin rule access for up to ~1 hour after demotion; server-side `auth.revokeRefreshTokens(uid)` stops token renewal after that.
+   - Note: Users whose role, assigned stations, or password are changed by an administrator will have their refresh tokens revoked and will be required to log in again with fresh credentials within about an hour.
+
 

@@ -70,6 +70,7 @@ export const UserControlSection = ({ user }) => {
         resetUserPassword,
         updateTicketStatus,
         getDisplayName,
+        authenticateUser,
     } = useCQA();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -137,6 +138,17 @@ export const UserControlSection = ({ user }) => {
         e.preventDefault();
         try {
             await updateUser(editUser.oldId, editUser);
+            // If the admin edited their own record
+            if (user && (editUser.oldId === user.id || editUser.id === user.id)) {
+                if (editUser.password) {
+                    const reauth = await authenticateUser(editUser.id, editUser.password);
+                    if (!reauth?.success) {
+                        alert('Your user credentials were updated. Please log in with your new password.');
+                        const { auth, signOut } = await import('../firebase');
+                        await signOut(auth);
+                    }
+                }
+            }
             setEditUser(null);
         } catch (err) {
             alert(err.message);

@@ -10,7 +10,7 @@ export default function ForceChangePassword({ user, onPasswordChanged, onLogout 
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
 
-    const { changeOwnPassword } = useCQA();
+    const { changeOwnPassword, authenticateUser } = useCQA();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -40,10 +40,27 @@ export default function ForceChangePassword({ user, onPasswordChanged, onLogout 
         try {
             if (changeOwnPassword) {
                 await changeOwnPassword(currentPassword, newPassword);
-                setSuccess(true);
-                setTimeout(() => {
-                    if (onPasswordChanged) onPasswordChanged();
-                }, 1500);
+
+                // Silently re-authenticate to renew session and refresh claims
+                let reauthSuccess = false;
+                try {
+                    const reauth = await authenticateUser(user.id, newPassword);
+                    if (reauth && reauth.success) {
+                        reauthSuccess = true;
+                    }
+                } catch (reauthErr) {
+                    console.warn('[Auth] Silent reauth error:', reauthErr);
+                }
+
+                if (reauthSuccess) {
+                    setSuccess(true);
+                    setTimeout(() => {
+                        if (onPasswordChanged) onPasswordChanged();
+                    }, 1200);
+                } else {
+                    alert('Password successfully updated! Please log in with your new password.');
+                    if (onLogout) onLogout();
+                }
             } else {
                 setError('Password update service is unavailable.');
             }

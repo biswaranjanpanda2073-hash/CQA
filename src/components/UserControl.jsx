@@ -10,9 +10,10 @@ import {
     Activity
 } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
+import { auth, signOut } from '../firebase';
 
 const UserControl = ({ user }) => {
-    const { requestPasswordReset, getAuditLogs, getDisplayName } = useCQA();
+    const { requestPasswordReset, getAuditLogs, getDisplayName, changeOwnPassword, authenticateUser } = useCQA();
 
     const roleColor = user?.role === 'Admin' ? 'admin' : user?.role === 'Supervisor' ? 'supervisor' : 'operator';
 
@@ -51,8 +52,6 @@ const UserControl = ({ user }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [pwLoading, setPwLoading] = useState(false);
     const [pwMessage, setPwMessage] = useState({ text: '', type: '' });
-    const { changeOwnPassword } = useCQA();
-
     const handleChangePassword = async (e) => {
         e.preventDefault();
         setPwMessage({ text: '', type: '' });
@@ -73,11 +72,28 @@ const UserControl = ({ user }) => {
         try {
             if (changeOwnPassword) {
                 await changeOwnPassword(currentPassword, newPassword);
-                setPwMessage({ text: 'Password changed successfully!', type: 'success' });
-                setCurrentPassword('');
-                setNewPassword('');
-                setConfirmPassword('');
-                setTimeout(() => setShowChangePw(false), 2000);
+
+                // Silently re-authenticate to renew session and refresh claims
+                let reauthSuccess = false;
+                try {
+                    const reauth = await authenticateUser(user.id, newPassword);
+                    if (reauth && reauth.success) {
+                        reauthSuccess = true;
+                    }
+                } catch (reauthErr) {
+                    console.warn('[Auth] Silent reauth error:', reauthErr);
+                }
+
+                if (reauthSuccess) {
+                    setPwMessage({ text: 'Password changed successfully! Session renewed.', type: 'success' });
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setTimeout(() => setShowChangePw(false), 2000);
+                } else {
+                    alert('Password changed successfully! Please log in with your new password.');
+                    await signOut(auth);
+                }
             } else {
                 setPwMessage({ text: 'Password change service unavailable.', type: 'error' });
             }
