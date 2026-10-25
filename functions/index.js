@@ -13,14 +13,14 @@
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { initializeApp } = require("firebase-admin/app");
+const { initializeApp, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const crypto = require("crypto");
 const util = require("util");
 const scryptAsync = util.promisify(crypto.scrypt);
 
-const app = initializeApp();
+const app = getApps().length > 0 ? getApps()[0] : initializeApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
 
