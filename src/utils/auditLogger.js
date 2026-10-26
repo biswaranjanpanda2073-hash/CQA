@@ -4,7 +4,7 @@
  * into the Firestore 'audit_logs' collection.
  */
 
-import { db, doc, setDoc, collection, query, orderBy, limit, getDocs, where } from '../firebase.js';
+import { db, doc, setDoc, collection, query, orderBy, limit, getDocs, where, auth } from '../firebase.js';
 
 export const AUDIT_ACTIONS = {
     // Project
@@ -72,6 +72,24 @@ export const generateAuditId = () => {
     return `AUD-${dateStr}-${timeStr}-${rand}`;
 };
 
+const SENSITIVE_AUDIT_KEYS = new Set(['password', 'hash', 'salt', 'secret', 'token']);
+
+export const sanitizeAuditData = (val) => {
+    if (val === null || val === undefined) return val;
+    if (typeof val !== 'object') return val;
+    if (Array.isArray(val)) {
+        return val.map(sanitizeAuditData);
+    }
+    const clean = {};
+    for (const [k, v] of Object.entries(val)) {
+        if (SENSITIVE_AUDIT_KEYS.has(k.toLowerCase())) {
+            continue;
+        }
+        clean[k] = sanitizeAuditData(v);
+    }
+    return clean;
+};
+
 /**
  * Logs an administrative operation to Firestore.
  */
@@ -90,19 +108,25 @@ export const logAdminAction = async ({
     try {
         const auditId = generateAuditId();
         const timestamp = new Date().toISOString();
+        const actorId = auth.currentUser?.uid || actor?.id || actor?.uid;
+
+        if (!actorId) {
+            console.error('CRITICAL: Cannot record audit log without authenticated user (actorId missing).');
+            return { success: false, error: 'Authentication required for audit log' };
+        }
 
         const auditEntry = {
             id: auditId,
             timestamp,
-            actorId: actor?.id || actor?.uid || 'UNKNOWN',
-            actorName: actor?.name || actor?.id || 'System Administrator',
+            actorId: String(actorId),
+            actorName: actor?.name || actor?.id || String(actorId),
             actorRole: actor?.role || 'Admin',
             action,
             entity,
             entityId: String(entityId || 'N/A'),
             project: project || null,
-            previousValue: previousValue ? JSON.parse(JSON.stringify(previousValue)) : null,
-            newValue: newValue ? JSON.parse(JSON.stringify(newValue)) : null,
+            previousValue: previousValue ? sanitizeAuditData(JSON.parse(JSON.stringify(previousValue))) : null,
+            newValue: newValue ? sanitizeAuditData(JSON.parse(JSON.stringify(newValue))) : null,
             reason: reason || 'Administrative modification',
             remarks: remarks || '',
             status
@@ -112,7 +136,7 @@ export const logAdminAction = async ({
         await setDoc(auditRef, auditEntry);
         return { success: true, auditId };
     } catch (err) {
-        console.error('Failed to record administrative audit log:', err);
+        console.error('Failed to record administrative audit log to Firestore:', err);
         // Fail-safe: do not crash the app, but return error
         return { success: false, error: err.message };
     }

@@ -1,7 +1,7 @@
-// Build v1.0.1 - Station Logic Polish
 import React, { useState, useEffect } from 'react';
 import './index.css';
 import { CQAProvider, useCQA } from './hooks/useCQA';
+import { auth, db, doc, getDoc, signOut } from './firebase';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Stations, { StationExecutionView } from './components/Stations';
@@ -12,13 +12,22 @@ import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
 import BaanModule from './components/BaanModule';
 import AdminLayout from './components/admin/AdminLayout';
+import ForceChangePassword from './components/ForceChangePassword';
 
 const AppContent = () => {
   const { store } = useCQA();
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('cqa_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.password) {
+          localStorage.removeItem('cqa_user');
+          return null;
+        }
+        return parsed;
+      }
+      return null;
     } catch { return null; }
   });
   const [activeSection, setActiveSection] = useState(() => {
@@ -34,14 +43,60 @@ const AppContent = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('cqa_theme') || 'light');
 
-  // Persist user session
+  // Firebase Auth state listener as single source of truth for session
   useEffect(() => {
-    if (user) {
-      localStorage.setItem('cqa_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('cqa_user');
-    }
-  }, [user]);
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        localStorage.removeItem('cqa_user');
+        return;
+      }
+
+      try {
+        const uid = firebaseUser.uid;
+        // Verify token claims
+        const tokenResult = await firebaseUser.getIdTokenResult();
+        const claimRole = tokenResult.claims.role;
+
+        const userDocRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userDocRef);
+
+        if (!userSnap.exists()) {
+          console.warn('[Auth] User document does not exist for UID:', uid);
+          await signOut(auth);
+          setUser(null);
+          localStorage.removeItem('cqa_user');
+          return;
+        }
+
+        const docData = userSnap.data();
+
+        // Cross-check claim role with Firestore doc role
+        if (claimRole && docData.role && claimRole !== docData.role) {
+          console.warn('[Auth] Token claim role differs from Firestore doc. Signing out.');
+          await signOut(auth);
+          setUser(null);
+          localStorage.removeItem('cqa_user');
+          return;
+        }
+
+        const cleanUserData = {
+          id: uid,
+          name: docData.name || uid,
+          role: docData.role || 'Operator',
+          stations: Array.isArray(docData.stations) ? docData.stations : [],
+          mustChangePassword: docData.mustChangePassword === true
+        };
+
+        setUser(cleanUserData);
+        localStorage.setItem('cqa_user', JSON.stringify(cleanUserData));
+      } catch (err) {
+        console.error('[Auth] Failed to synchronize user profile:', err);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Theme management
   useEffect(() => {
@@ -83,8 +138,14 @@ const AppContent = () => {
 
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('SignOut error:', e);
+    }
     setUser(null);
+    localStorage.removeItem('cqa_user');
     setActiveSection('dashboard');
   };
 
@@ -108,9 +169,24 @@ const AppContent = () => {
   // ─── Login Screen ───
   if (!user) return <Login onLogin={setUser} />;
 
+  // ─── Mandatory Password Change Gate ───
+  if (user?.mustChangePassword) {
+    return (
+      <ForceChangePassword
+        user={user}
+        onPasswordChanged={() => {
+          const updated = { ...user, mustChangePassword: false };
+          setUser(updated);
+          localStorage.setItem('cqa_user', JSON.stringify(updated));
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   // ─── Maintenance Lock ───
   const isMaintenanceMode = store.settings?.maintenanceMode;
-  if (isMaintenanceMode && user.role !== 'Admin') {
+  if (isMaintenanceMode && !['Admin', 'Super Admin'].includes(user.role)) {
     return (
       <div className="flex-center" style={{
         minHeight: '100vh',

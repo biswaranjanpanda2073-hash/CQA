@@ -16,6 +16,7 @@ export const TerminalHeader = ({
     scannerActive = true,
     backendOnline = true,
     stationStatus = 'Operational',
+    beforeLiveMes = null,
     extraMeta = null
 }) => {
     return (
@@ -37,6 +38,7 @@ export const TerminalHeader = ({
                 )}
 
                 <div className="terminal-status-group">
+                    {beforeLiveMes}
                     {backendOnline && (
                         <div className="terminal-status-pill online" title="Backend connection active">
                             <div className="terminal-dot" />

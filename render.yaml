@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cqa-mes-backend
+    runtime: node
+    plan: free
+    rootDir: functions
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: GCLOUD_PROJECT
+        value: cqa-mes
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false

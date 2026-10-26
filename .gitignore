@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Security & Secrets
+serviceAccountKey*.json
+*.pem
+.env
+.env.local
+.env.*.local
+!.env.example
+*.zip
+backups/
+backup_*/

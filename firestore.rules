@@ -1,69 +1,76 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Protect Calculator devices from client-side write bypass.
-    // All Calculator device mutations MUST be performed via trusted Cloud Functions.
+
+    function signedIn() { return request.auth != null; }
+    function roleOf()   { return request.auth.token.role; }
+    function isAdmin()  { return signedIn() && roleOf() in ['Admin', 'Super Admin']; }
+    function isSuper()  { return signedIn() && roleOf() == 'Super Admin'; }
+
+    // Users: own doc or admin may read. All writes via Cloud Functions only.
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if false;
+    }
+    // Server-only secrets (password hashes, lockout counters)
+    match /user_secrets/{id}   { allow read, write: if false; }
+    match /login_attempts/{id} { allow read, write: if false; }
+
+    // Password-reset tickets (doc id = userId)
+    match /tickets/{ticketId} {
+      allow read:   if signedIn() && (isAdmin() || ticketId == request.auth.uid);
+      allow create: if signedIn() && ticketId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'Pending';
+      allow update: if signedIn() && (isAdmin()
+                    || (ticketId == request.auth.uid && request.resource.data.status == 'Pending'));
+      allow delete: if isAdmin();
+    }
+
+    // Devices: Calculator is function-only. No client deletes (use purgeDevices function).
     match /devices/{deviceId} {
-      allow read: if true;
-      allow create: if request.resource.data.project != 'Calculator';
-      allow update: if resource.data.project != 'Calculator' && request.resource.data.project != 'Calculator';
-      allow delete: if resource.data.project != 'Calculator';
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.project != 'Calculator';
+      allow update: if signedIn() && resource.data.project != 'Calculator'
+                                  && request.resource.data.project != 'Calculator';
+      allow delete: if false;
     }
 
-    // IMMUTABLE AUDIT LOGS: Append-only compliance log. Tampering or deletion is strictly forbidden.
+    // Audit logs: append-only, caller identity must match
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow create: if request.resource.data.action != null;
+      allow read:   if isAdmin();
+      allow create: if signedIn() && request.resource.data.action != null
+                    && request.resource.data.actorId == request.auth.uid;
       allow update, delete: if false;
     }
 
-    // IMMUTABLE INVENTORY & MOVEMENT HISTORY: Cannot delete past movement records
-    match /baan_inventory_movements/{movementId} {
-      allow read: if true;
-      allow create: if true;
-      allow update, delete: if false;
+    // Settings & master configuration: any signed-in user reads, admins write
+    match /settings/{id}                    { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /roles/{id}                       { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /projects/{id}                    { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /stations_master/{id}             { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /station_checkpoints/{id}         { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /project_workflows/{id}           { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /project_workflows_versions/{id}  { allow read: if signedIn(); allow write: if isAdmin(); }
+
+    // Admin movements (written by admin tooling)
+    match /admin_movements/{id} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
-    match /baan_inward_logs/{inwardId} {
-      allow read: if true;
-      allow create: if true;
-      allow update, delete: if false;
-    }
+    // BAAN inventory: operators consume/request parts, so signed-in users can create/update.
+    match /baan_parts/{id}             { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
+    match /baan_batches/{id}           { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
+    match /baan_part_requests/{id}     { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
+    match /baan_part_issuance/{id}     { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
+    match /baan_bulk_uploads/{id}      { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
+    match /baan_locations/{id}         { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if isAdmin(); }
+    match /baan_inventory_movements/{id} { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
+    match /baan_inward_logs/{id}         { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
 
-    // Master Configuration & Governance documents
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /roles/{roleId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /projects/{projectId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /stations_master/{stationId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /project_workflows/{workflowId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /station_checkpoints/{checkpointId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Fallback open access for remaining collections to preserve operational compatibility
-    match /{document=**} {
-      allow read, write: if true;
-    }
+    // Default deny
+    match /{document=**} { allow read, write: if false; }
   }
 }

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
 import UnitSerialConfig from './UnitSerialConfig';
+import { auth, signOut } from '../firebase';
 
 /* ═══════════════════════════════════
    USER CONTROL (Admin)
@@ -70,12 +71,12 @@ export const UserControlSection = ({ user }) => {
         resetUserPassword,
         updateTicketStatus,
         getDisplayName,
+        authenticateUser,
     } = useCQA();
 
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddUser, setShowAddUser] = useState(false);
     const [editUser, setEditUser] = useState(null);
-    const [showPasswords, setShowPasswords] = useState({});
     const [newUser, setNewUser] = useState({ id: '', name: '', password: '', role: 'Operator', stations: [] });
     const [activeTab, setActiveTab] = useState('users');
 
@@ -138,6 +139,26 @@ export const UserControlSection = ({ user }) => {
         e.preventDefault();
         try {
             await updateUser(editUser.oldId, editUser);
+            // If the admin edited their own record
+            if (user && (editUser.oldId === user.id || editUser.id === user.id)) {
+                const roleChanged = editUser.role !== user.role;
+                const stationsChanged = JSON.stringify([...(editUser.stations || [])].sort()) !== JSON.stringify([...(user.stations || [])].sort());
+                const idChanged = editUser.id !== user.id;
+                const pwChanged = Boolean(editUser.password);
+
+                if (pwChanged || roleChanged || stationsChanged || idChanged) {
+                    if (pwChanged) {
+                        const reauth = await authenticateUser(editUser.id, editUser.password);
+                        if (!reauth?.success) {
+                            alert('Your user credentials were updated. Please log in with your new password.');
+                            await signOut(auth);
+                        }
+                    } else {
+                        alert('Your user permissions (role/station access) were updated. Please log in again to refresh your session.');
+                        await signOut(auth);
+                    }
+                }
+            }
             setEditUser(null);
         } catch (err) {
             alert(err.message);
@@ -159,15 +180,22 @@ export const UserControlSection = ({ user }) => {
             return;
         }
 
-        const newPw = window.prompt('Enter new password for user (Leave blank for auto-gen):');
-        if (newPw === null) return; // Cancelled
+        const inputPw = window.prompt('Enter new password for user (min 8 characters), or leave blank for secure auto-generation:');
+        if (inputPw === null) return; // Cancelled
 
-        const finalPw = newPw.trim() || 'CQA' + Math.floor(Math.random() * 9000 + 1000);
+        const trimmed = inputPw.trim();
+        if (trimmed && trimmed.length < 8) {
+            alert('Password must be at least 8 characters long.');
+            return;
+        }
 
-        if (window.confirm(`Assign password "${finalPw}" and approve request?`)) {
-            await resetUserPassword(ticketId, finalPw);
+        try {
+            const res = await resetUserPassword(ticketId, trimmed || undefined);
+            const assignedPw = res?.temporaryPassword || res?.password || trimmed;
             await updateTicketStatus(ticketId, 'Approved');
-            alert(`Password updated to: ${finalPw}`);
+            alert(`Password reset successfully approved for user "${ticketId}".\n\nTemporary Password: ${assignedPw}\n\n(The user will be required to change this password on next login.)`);
+        } catch (err) {
+            alert(`Failed to reset password: ${err.message || 'Unknown error'}`);
         }
     };
 
@@ -276,7 +304,7 @@ export const UserControlSection = ({ user }) => {
                                     </div>
                                     <div className="input-field">
                                         <label>Password</label>
-                                        <input required type="password" placeholder="Set initial password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
+                                        <input required type="password" placeholder="Set initial password (min 8 chars)" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
                                     </div>
                                     <div className="input-field">
                                         <label>Role</label>
@@ -330,8 +358,8 @@ export const UserControlSection = ({ user }) => {
                                         <input required value={editUser.name} onChange={e => setEditUser({ ...editUser, name: e.target.value })} />
                                     </div>
                                     <div className="input-field">
-                                        <label>Password</label>
-                                        <input required value={editUser.password} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
+                                        <label>New Password (optional)</label>
+                                        <input type="password" placeholder="Leave blank to keep unchanged (min 8 chars)" value={editUser.password || ''} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
                                     </div>
                                     <div className="input-field">
                                         <label>Role</label>
@@ -401,37 +429,17 @@ export const UserControlSection = ({ user }) => {
                                                         title="Edit User"
                                                         style={{ padding: '0.35rem' }}
                                                         onClick={() => {
-                                                            setEditUser({ ...u, oldId: u.id });
+                                                            setEditUser({ ...u, oldId: u.id, password: '' });
                                                             setShowAddUser(false);
                                                             window.scrollTo({ top: 0, behavior: 'smooth' });
                                                         }}
                                                     >
                                                         <Edit3 size={14} />
                                                     </button>
-                                                    <button
-                                                        className="btn-ghost"
-                                                        title="Toggle password visibility"
-                                                        style={{ padding: '0.35rem' }}
-                                                        onClick={() => setShowPasswords(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
-                                                    >
-                                                        {showPasswords[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                                    </button>
                                                     <button className="btn-ghost" title="Delete" style={{ padding: '0.35rem', color: 'var(--error)' }} onClick={() => handleDeleteUser(u.id)} disabled={u.id === user.id}>
                                                         <Trash2 size={14} />
                                                     </button>
-
                                                 </div>
-                                                {showPasswords[u.id] && (
-                                                    <div className="text-mono text-xs" style={{
-                                                        marginTop: '0.25rem',
-                                                        padding: '0.25rem 0.5rem',
-                                                        background: 'var(--bg-input)',
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        border: '1px solid var(--border)'
-                                                    }}>
-                                                        {u.password || '•••••'}
-                                                    </div>
-                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -549,12 +557,22 @@ export const MaintenanceSection = ({ user, initialTab = 'controls' }) => {
                         return;
                     }
 
-                    if (window.confirm("ARE YOU SURE? This will permanently delete matching records.")) {
-                        const result = await purgeData(filters);
-                        alert(`Purge complete: ${result.count} records deleted.`);
-                        setPurgeFilters({ project: '', station: '', serial: '' });
-                        setPurgeTarget('');
+                    if (filters === 'all') {
+                        const typed = window.prompt("DANGER: You are about to purge ALL device records. Type 'PURGE' to confirm:");
+                        if (typed !== 'PURGE') {
+                            alert("Purge cancelled: confirmation phrase did not match.");
+                            setIsProcessing(false);
+                            return;
+                        }
+                    } else if (!window.confirm("ARE YOU SURE? This will permanently delete matching records.")) {
+                        setIsProcessing(false);
+                        return;
                     }
+
+                    const result = await purgeData(filters);
+                    alert(`Purge complete: ${result.count} records deleted.`);
+                    setPurgeFilters({ project: '', station: '', serial: '' });
+                    setPurgeTarget('');
                     break;
                 case 'save_names':
                     await updateSystemNames(editNames);
