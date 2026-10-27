@@ -225,6 +225,8 @@ const AppContent = () => {
       case 'baan': return <BaanModule user={user} />;
       case 'profile': return <UserControl user={user} />;
       case 'admin': return isAdmin ? <AdminLayout user={user} initialTab="overview" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
+      case 'bom-studio':
+      case 'bom-master': return isAdmin ? <AdminLayout user={user} initialTab="bom-studio" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
       case 'users': return isAdmin ? <AdminLayout user={user} initialTab="users" /> : <UserControl user={user} />;
       case 'maintenance': return isAdmin ? <AdminLayout user={user} initialTab="maintenance" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
       case 'unit-config': return isAdmin ? <AdminLayout user={user} initialTab="unit-config" /> : <Dashboard toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />;
