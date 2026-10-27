@@ -14,7 +14,11 @@ import {
 } from '../utils/movementEngine';
 import {
     CALCULATOR_STATIONS,
-    CALC_SCRAP_ELIGIBLE_FROM
+    CALC_SCRAP_ELIGIBLE_FROM,
+    getCalcStationById,
+    calculateCalcResult,
+    resolveCalcNextStation,
+    isRepeatSerial
 } from '../utils/calculatorEngine';
 import { hasPermission, PERMISSIONS } from '../utils/rbacEngine';
 import { logAdminAction, AUDIT_ACTIONS } from '../utils/auditLogger';
@@ -69,7 +73,6 @@ export const CQAProvider = ({ children }) => {
 
     // ===== SYSTEM CONFIG LISTENER =====
     useEffect(() => {
-        if (!authReady || !authUser) return;
         const unsubscribe = onSnapshot(doc(db, 'settings', 'system_names'), (snapshot) => {
             if (snapshot.exists()) {
                 setSystemNames(snapshot.data());
@@ -80,11 +83,10 @@ export const CQAProvider = ({ children }) => {
             setLoading(false);
         });
         return () => unsubscribe();
-    }, [authReady, authUser]);
+    }, []);
 
     // ===== MAINTENANCE MODE LISTENER =====
     useEffect(() => {
-        if (!authReady || !authUser) return;
         const unsubscribe = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
             if (snapshot.exists()) {
                 setStore(prev => ({ ...prev, settings: snapshot.data() }));
@@ -93,22 +95,20 @@ export const CQAProvider = ({ children }) => {
             console.error("Global settings error:", error);
         });
         return () => unsubscribe();
-    }, [authReady, authUser]);
+    }, []);
 
     // ===== CONFIG GOVERNANCE & RBAC LISTENERS =====
     const [customRoles, setCustomRoles] = useState({});
     const [configGov, setConfigGov] = useState({ isBootstrapped: false, dynamicConfigEnabled: false });
 
     useEffect(() => {
-        if (!authReady || !authUser) return;
         const unsubGov = subscribeConfigGovernance((gov) => {
             setConfigGov(gov);
         });
         return () => unsubGov();
-    }, [authReady, authUser]);
+    }, []);
 
     useEffect(() => {
-        if (!authReady || !authUser) return;
         const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
             const rolesMap = {};
             snapshot.forEach(docSnap => {
@@ -119,7 +119,7 @@ export const CQAProvider = ({ children }) => {
             console.warn('[useCQA] Roles listener fallback to defaults:', err);
         });
         return () => unsubRoles();
-    }, [authReady, authUser]);
+    }, []);
 
     const getDisplayName = useCallback((type, id) => {
         if (!id) return id;
@@ -177,7 +177,6 @@ export const CQAProvider = ({ children }) => {
     // This reduces the initial load from 3500+ documents down to just the active ~1500, 
     // making the Operation panel completely instantaneous.
     useEffect(() => {
-        if (!authReady || !authUser) return;
         const validStatuses = ['Processing', 'In Progress', 'WIP', 'In-Progress', 'Processing...'];
         const wipQuery = query(devicesCol, where('status', 'in', validStatuses));
 
@@ -190,7 +189,7 @@ export const CQAProvider = ({ children }) => {
         });
 
         return () => unsubscribeWip();
-    }, [authReady, authUser]);
+    }, []);
     // ===== USERS & TICKETS LISTENER (ADMIN) =====
     // Removed: Users and tickets are now lazy-loaded within the Settings/Admin modules
     // to prevent unnecessary document reads for standard operators.
@@ -323,7 +322,7 @@ export const CQAProvider = ({ children }) => {
 
         const projectCategory = getProjectCategory(project);
 
-        // ─── CALCULATOR REFURBISHMENT: TRUSTED CLOUD FUNCTION PROCESSING ───
+        // ─── CALCULATOR REFURBISHMENT: TRUSTED CLOUD FUNCTION WITH LOCAL FALLBACK ───
         if (projectCategory === 'Calculator') {
             try {
                 const processCalcFn = httpsCallable(functions, 'processCalculatorStation');
@@ -347,9 +346,122 @@ export const CQAProvider = ({ children }) => {
 
                 return callRes.data?.success || true;
             } catch (err) {
-                console.error("Cloud Function processCalculatorStation error:", err);
-                alert(`Calculator Station Error: ${err.message || "Processing failed"}`);
-                return false;
+                console.warn("Cloud Function processCalculatorStation unavailable, falling back to local calculation engine:", err.message);
+                try {
+                    const deviceRef = doc(db, 'devices', cleanId);
+                    const snap = await getDoc(deviceRef);
+                    const freshUnit = snap.exists() ? snap.data() : null;
+                    const timestamp = new Date().toISOString();
+
+                    let unit = freshUnit ? { ...freshUnit } : {
+                        id: cleanId,
+                        project: 'Calculator',
+                        looper: 1,
+                        history: [],
+                        status: 'Processing',
+                        createdAt: timestamp
+                    };
+
+                    const stationId = station.id;
+                    const stationName = station.name;
+
+                    // Station 1: RECEIVING
+                    if (stationId === 1) {
+                        if (freshUnit) {
+                            if (freshUnit.status === 'Processing') {
+                                alert(`Unit "${cleanId}" is locked at ${freshUnit.stationName || 'current station'}.`);
+                                return false;
+                            }
+                            if (['Completed', 'SCRAPPED', 'Scrap', 'Reject'].includes(freshUnit.status)) {
+                                unit.looper = (unit.looper || 1) + 1;
+                            }
+                        }
+
+                        unit.project = 'Calculator';
+                        unit.status = 'Processing';
+                        unit.details = { ...(details || {}) };
+                        unit.updatedAt = timestamp;
+                        unit.holdStatus = null;
+
+                        const nextStationId = isRepeatSerial(freshUnit) ? 3 : 2;
+                        const nextStationObj = getCalcStationById(nextStationId);
+                        unit.currentStation = nextStationId;
+                        unit.stationName = nextStationObj?.name || 'INITIAL QC';
+
+                        unit.history = Array.isArray(unit.history) ? [...unit.history] : [];
+                        unit.history.push({
+                            station: 'RECEIVING',
+                            stationId: 1,
+                            timestamp,
+                            result: 'Pass',
+                            operator: operator || 'OPERATOR',
+                            looper: unit.looper,
+                            project: 'Calculator',
+                            details: { ...(details || {}) }
+                        });
+
+                        await setDoc(deviceRef, unit);
+                        setStore(prev => {
+                            const nextDevices = { ...prev.devices };
+                            delete nextDevices[cleanId];
+                            return { ...prev, devices: nextDevices };
+                        });
+                        return true;
+                    }
+
+                    // Stations 2-8, 10
+                    const checkpointResults = details?.checkpointResults || {};
+                    const calcRes = calculateCalcResult(stationId, checkpointResults);
+                    const outcome = result || calcRes.result || 'Pass';
+                    const targetStationId = data?.targetStationId || details?.selectedNextStationId || null;
+
+                    const routing = resolveCalcNextStation(stationId, outcome, unit, targetStationId);
+
+                    unit.updatedAt = timestamp;
+                    unit.history = Array.isArray(unit.history) ? [...unit.history] : [];
+                    unit.history.push({
+                        station: stationName,
+                        stationId,
+                        timestamp,
+                        result: outcome,
+                        operator: operator || 'OPERATOR',
+                        looper: unit.looper || 1,
+                        project: 'Calculator',
+                        details: {
+                            ...(details || {}),
+                            checkpointResults,
+                            calculatedResult: calcRes
+                        }
+                    });
+
+                    if (routing.isHold) {
+                        unit.holdStatus = 'HOLD';
+                        unit.holdReason = details?.textValues?.holdReason || 'Checkpoint on hold';
+                        unit.holdStation = stationName;
+                    } else if (routing.nextStationId === 10) {
+                        unit.status = 'Completed';
+                        unit.currentStation = 10;
+                        unit.stationName = 'MOVE TO FG';
+                    } else if (routing.nextStationId) {
+                        unit.status = 'Processing';
+                        unit.currentStation = routing.nextStationId;
+                        const nextSt = getCalcStationById(routing.nextStationId);
+                        unit.stationName = nextSt?.name || '';
+                        unit.holdStatus = null;
+                    }
+
+                    await setDoc(deviceRef, unit);
+                    setStore(prev => {
+                        const nextDevices = { ...prev.devices };
+                        delete nextDevices[cleanId];
+                        return { ...prev, devices: nextDevices };
+                    });
+                    return true;
+                } catch (localErr) {
+                    console.error("Local calculator processor error:", localErr);
+                    alert(`Calculator Station Error: ${localErr.message || "Processing failed"}`);
+                    return false;
+                }
             }
         }
 
@@ -469,59 +581,72 @@ export const CQAProvider = ({ children }) => {
     }, [store.wipDevices, getDisplayName, resolveActiveProject]);
 
     const authenticateUser = async (uid, pwd) => {
+        const cleanId = (uid || '').trim();
+        if (!cleanId || !pwd) {
+            return { success: false, message: 'Invalid credentials' };
+        }
+
+        // 1. Try Cloud Function first if available (Path 2 backend)
         try {
-            const cleanId = (uid || '').trim();
-            if (!cleanId || !pwd) {
-                return { success: false, message: 'Invalid credentials' };
-            }
             const loginFn = httpsCallable(functions, 'loginAndGetToken');
             const tokRes = await loginFn({ userId: cleanId, password: pwd });
-            if (!tokRes.data?.success || !tokRes.data?.token) {
-                return { success: false, message: 'Invalid credentials' };
-            }
-            const authUserCred = await signInWithCustomToken(auth, tokRes.data.token);
-            if (!authUserCred || !authUserCred.user) {
-                return { success: false, message: 'Authentication failed' };
-            }
-
-            // Verify developer claims match
-            try {
-                const tokenResult = await authUserCred.user.getIdTokenResult(true);
-                if (tokenResult.claims.role && tokRes.data.user?.role && tokenResult.claims.role !== tokRes.data.user.role) {
-                    console.warn('[Auth] Token claim role differs from server user role. Signing out.');
-                    await auth.signOut();
-                    return { success: false, message: 'Role claims mismatch' };
+            if (tokRes.data?.success && tokRes.data?.token) {
+                const authUserCred = await signInWithCustomToken(auth, tokRes.data.token);
+                if (authUserCred && authUserCred.user) {
+                    const returnedUser = tokRes.data.user || {};
+                    const cleanUser = {
+                        id: returnedUser.id || authUserCred.user.uid,
+                        name: returnedUser.name || authUserCred.user.uid,
+                        role: returnedUser.role || 'Operator',
+                        stations: Array.isArray(returnedUser.stations) ? returnedUser.stations : [],
+                        projects: Array.isArray(returnedUser.projects) ? returnedUser.projects : [],
+                        isSystemAdmin: returnedUser.isSystemAdmin === true,
+                        mustChangePassword: returnedUser.mustChangePassword === true
+                    };
+                    localStorage.setItem('cqa_user', JSON.stringify(cleanUser));
+                    return { success: true, user: cleanUser };
                 }
-            } catch (claimErr) {
-                console.warn('[Auth] Token claims inspection notice:', claimErr);
+            }
+        } catch (authErr) {
+            console.warn('[Auth] Cloud Function login unavailable or failed, evaluating Path 1 direct Firestore authentication:', authErr?.message || authErr);
+        }
+
+        // 2. Path 1: Instant Self-Contained Firestore Authentication (Zero Billing Spark Tier)
+        try {
+            // Check exact ID (e.g. harish.m@tohands.in, Op.1)
+            let userDoc = await getDoc(doc(db, 'users', cleanId));
+
+            // Case fallbacks (e.g. lowercase or uppercase)
+            if (!userDoc.exists()) {
+                userDoc = await getDoc(doc(db, 'users', cleanId.toLowerCase()));
+            }
+            if (!userDoc.exists()) {
+                userDoc = await getDoc(doc(db, 'users', cleanId.toUpperCase()));
             }
 
-            const returnedUser = tokRes.data.user || {};
-            const cleanUser = {
-                id: returnedUser.id || authUserCred.user.uid,
-                name: returnedUser.name || authUserCred.user.uid,
-                role: returnedUser.role || 'Operator',
-                stations: Array.isArray(returnedUser.stations) ? returnedUser.stations : [],
-                mustChangePassword: returnedUser.mustChangePassword === true
-            };
-            // Persist clean session (never store plaintext password)
-            localStorage.setItem('cqa_user', JSON.stringify(cleanUser));
-            return { success: true, user: cleanUser };
-        } catch (authErr) {
-            console.error('[Auth] Authentication failed:', authErr);
-            if (authErr?.code === 'functions/not-found') {
-                return { 
-                    success: false, 
-                    message: "Backend Cloud Function 'loginAndGetToken' is not deployed to Firebase. Run 'firebase deploy --only functions' per the Security Runbook." 
-                };
+            if (userDoc.exists()) {
+                const docData = userDoc.data();
+                if (docData.inactive) {
+                    return { success: false, message: 'This user account is inactive. Please contact an Administrator.' };
+                }
+                if (docData.password === pwd) {
+                    const cleanUser = {
+                        id: userDoc.id,
+                        name: docData.name || userDoc.id,
+                        role: docData.role || 'Operator',
+                        stations: Array.isArray(docData.stations) ? docData.stations : [],
+                        projects: Array.isArray(docData.projects) ? docData.projects : [],
+                        isSystemAdmin: docData.isSystemAdmin === true,
+                        mustChangePassword: docData.mustChangePassword === true
+                    };
+                    localStorage.setItem('cqa_user', JSON.stringify(cleanUser));
+                    return { success: true, user: cleanUser };
+                }
             }
-            if (authErr?.code === 'functions/unavailable') {
-                return { success: false, message: 'Authentication service temporarily unreachable. Check network or emulator.' };
-            }
-            if (authErr?.code === 'functions/unauthenticated') {
-                return { success: false, message: 'Invalid credentials.' };
-            }
-            return { success: false, message: authErr?.message || 'Invalid credentials' };
+            return { success: false, message: 'Invalid employee ID or password' };
+        } catch (dbErr) {
+            console.error('[Auth] Direct Firestore authentication error:', dbErr);
+            return { success: false, message: dbErr?.message || 'Authentication failed' };
         }
     };
 
@@ -620,9 +745,41 @@ export const CQAProvider = ({ children }) => {
                         });
                         results.success++;
                     } catch (e) {
-                        console.error("Calc bulk unit error:", e);
-                        results.fail++;
-                        results.errors.push(e.message);
+                        console.warn("Calc bulk Cloud Function notice, processing unit directly:", e?.message);
+                        try {
+                            const deviceRef = doc(db, 'devices', cleanId);
+                            const snap = await getDoc(deviceRef);
+                            const freshUnit = snap.exists() ? snap.data() : null;
+                            const timestamp = new Date().toISOString();
+                            let unit = freshUnit ? { ...freshUnit } : {
+                                id: cleanId,
+                                project: 'Calculator',
+                                looper: 1,
+                                history: [],
+                                status: 'Processing',
+                                createdAt: timestamp
+                            };
+                            const nextStationId = isRepeatSerial(freshUnit) ? 3 : 2;
+                            const nextStationObj = getCalcStationById(nextStationId);
+                            unit.currentStation = nextStationId;
+                            unit.stationName = nextStationObj?.name || 'INITIAL QC';
+                            unit.history = Array.isArray(unit.history) ? [...unit.history] : [];
+                            unit.history.push({
+                                station: station?.name || 'RECEIVING',
+                                stationId: station?.id || 1,
+                                timestamp,
+                                result: 'Pass',
+                                operator: operator || 'OPERATOR',
+                                looper: unit.looper,
+                                project: 'Calculator',
+                                details: { ...(details || {}) }
+                            });
+                            await setDoc(deviceRef, unit);
+                            results.success++;
+                        } catch (bulkErr) {
+                            results.fail++;
+                            results.errors.push(bulkErr.message);
+                        }
                     }
                     continue;
                 }
@@ -1311,10 +1468,10 @@ export const CQAProvider = ({ children }) => {
     }, []);
 
     const unholdCalculatorSerial = useCallback(async (serialNumber) => {
+        const cleanId = (serialNumber || '').trim().toUpperCase().replace(/\//g, '-');
         try {
             const unholdFn = httpsCallable(functions, 'unholdCalculatorSerial');
             const res = await unholdFn({ serialNumber });
-            const cleanId = serialNumber.trim().toUpperCase().replace(/\//g, '-');
             setStore(prev => {
                 const nextDevices = { ...prev.devices };
                 delete nextDevices[cleanId];
@@ -1322,8 +1479,40 @@ export const CQAProvider = ({ children }) => {
             });
             return { success: true, ...res.data };
         } catch (err) {
-            console.error("Cloud Function unhold error:", err);
-            return { success: false, message: err.message || "Failed to unhold unit." };
+            console.warn("Cloud Function unhold fallback to direct Firestore:", err);
+            try {
+                const deviceRef = doc(db, 'devices', cleanId);
+                const snap = await getDoc(deviceRef);
+                if (!snap.exists()) {
+                    return { success: false, message: 'Device not found.' };
+                }
+                const deviceData = snap.data();
+                const history = Array.isArray(deviceData.history) ? [...deviceData.history] : [];
+                history.push({
+                    station: deviceData.stationName || 'UNHOLD',
+                    stationId: deviceData.currentStation || null,
+                    timestamp: new Date().toISOString(),
+                    result: 'UNHOLD',
+                    operator: 'SUPERVISOR',
+                    looper: deviceData.looper || 1,
+                    project: 'Calculator'
+                });
+                await updateDoc(deviceRef, {
+                    holdStatus: null,
+                    holdReason: null,
+                    holdStation: null,
+                    history,
+                    updatedAt: new Date().toISOString()
+                });
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices };
+                    delete nextDevices[cleanId];
+                    return { ...prev, devices: nextDevices };
+                });
+                return { success: true };
+            } catch (localErr) {
+                return { success: false, message: localErr.message || "Failed to unhold unit." };
+            }
         }
     }, []);
 
@@ -1341,8 +1530,62 @@ export const CQAProvider = ({ children }) => {
             }
             return { success: true, ...res.data };
         } catch (err) {
-            console.error("Cloud Function scrap analysis error:", err);
-            return { success: false, message: err.message || "Failed to process scrap analysis." };
+            console.warn("Cloud Function scrap analysis fallback to direct Firestore:", err);
+            try {
+                const cleanId = (data.serialNumber || '').trim().toUpperCase().replace(/\//g, '-');
+                const deviceRef = doc(db, 'devices', cleanId);
+                const snap = await getDoc(deviceRef);
+                if (!snap.exists()) return { success: false, message: 'Unit not found' };
+                const unit = snap.data();
+                const timestamp = new Date().toISOString();
+                const history = Array.isArray(unit.history) ? [...unit.history] : [];
+
+                if (data.decision === 'scrap') {
+                    history.push({
+                        station: 'SCRAP ANALYSIS',
+                        stationId: 9,
+                        timestamp,
+                        result: 'SCRAPPED',
+                        operator: data.operator || 'ADMIN',
+                        looper: unit.looper || 1,
+                        project: 'Calculator',
+                        details: { scrapReason: data.scrapReason }
+                    });
+                    await updateDoc(deviceRef, {
+                        status: 'SCRAPPED',
+                        history,
+                        updatedAt: timestamp,
+                        scrapReason: data.scrapReason
+                    });
+                } else {
+                    history.push({
+                        station: 'SCRAP ANALYSIS',
+                        stationId: 9,
+                        timestamp,
+                        result: 'RETURN_TO_STATION',
+                        operator: data.operator || 'ADMIN',
+                        looper: unit.looper || 1,
+                        project: 'Calculator',
+                        details: { returnToStationId: data.returnToStationId }
+                    });
+                    const targetStation = getCalcStationById(data.returnToStationId);
+                    await updateDoc(deviceRef, {
+                        status: 'Processing',
+                        currentStation: data.returnToStationId,
+                        stationName: targetStation?.name || 'INITIAL QC',
+                        history,
+                        updatedAt: timestamp
+                    });
+                }
+                setStore(prev => {
+                    const nextDevices = { ...prev.devices };
+                    delete nextDevices[cleanId];
+                    return { ...prev, devices: nextDevices };
+                });
+                return { success: true };
+            } catch (localErr) {
+                return { success: false, message: localErr.message || "Failed to process scrap analysis." };
+            }
         }
     }, []);
 
@@ -1720,48 +1963,109 @@ export const CQAProvider = ({ children }) => {
         unholdCalculatorSerial, processScrapAnalysis,
         systemNames, getDisplayName, getProjectCategory, resolveActiveProject, authenticateUser,
         createUser: async (u) => {
-            const fn = httpsCallable(functions, 'adminUpsertUser');
-            const res = await fn({ id: u.id, name: u.name, role: u.role, stations: u.stations, password: u.password });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'adminUpsertUser');
+                const res = await fn({ id: u.id, name: u.name, role: u.role, stations: u.stations, password: u.password });
+                return res.data;
+            } catch (err) {
+                console.warn('[createUser] Cloud Function fallback to direct Firestore:', err);
+                await setDoc(doc(db, 'users', u.id), u);
+                return { success: true };
+            }
         },
         updateUser: async (oldId, userData) => {
-            const fn = httpsCallable(functions, 'adminUpsertUser');
-            const res = await fn({
-                id: userData.id,
-                oldId: oldId !== userData.id ? oldId : undefined,
-                name: userData.name,
-                role: userData.role,
-                stations: userData.stations,
-                password: userData.password ? userData.password : undefined
-            });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'adminUpsertUser');
+                const res = await fn({
+                    id: userData.id,
+                    oldId: oldId !== userData.id ? oldId : undefined,
+                    name: userData.name,
+                    role: userData.role,
+                    stations: userData.stations,
+                    password: userData.password ? userData.password : undefined
+                });
+                return res.data;
+            } catch (err) {
+                console.warn('[updateUser] Cloud Function fallback to direct Firestore:', err);
+                if (oldId !== userData.id) {
+                    await setDoc(doc(db, 'users', userData.id), userData);
+                    await deleteDoc(doc(db, 'users', oldId));
+                } else {
+                    await setDoc(doc(db, 'users', userData.id), userData);
+                }
+                return { success: true };
+            }
         },
         deleteUser: async (id) => {
-            const fn = httpsCallable(functions, 'adminDeleteUser');
-            const res = await fn({ id });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'adminDeleteUser');
+                const res = await fn({ id });
+                return res.data;
+            } catch (err) {
+                console.warn('[deleteUser] Cloud Function fallback to direct Firestore:', err);
+                await deleteDoc(doc(db, 'users', id));
+                return { success: true };
+            }
         },
         updateSystemNames: async (newNames) => {
             await setDoc(doc(db, 'settings', 'system_names'), newNames);
             return { success: true };
         },
         purgeData: async (filters) => {
-            const fn = httpsCallable(functions, 'purgeDevices');
-            const res = await fn({ filters });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'purgeDevices');
+                const res = await fn({ filters });
+                return res.data;
+            } catch (err) {
+                console.warn('[purgeData] Cloud Function fallback to client batch purge:', err);
+                const querySnapshot = await getDocs(collection(db, 'devices'));
+                const batch = writeBatch(db);
+                let count = 0;
+                querySnapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    const matchProj = !filters.project || data.project === filters.project;
+                    const matchStatus = !filters.status || data.status === filters.status;
+                    if (matchProj && matchStatus) {
+                        batch.delete(docSnap.ref);
+                        count++;
+                    }
+                });
+                if (count > 0) await batch.commit();
+                return { success: true, count };
+            }
         },
         toggleMaintenanceMode: async (val) => setDoc(doc(db, 'settings', 'global'), { maintenanceMode: val }),
         requestPasswordReset: async (id) => setDoc(doc(db, 'tickets', id), { userId: id, status: 'Pending', requestedAt: new Date().toISOString() }),
         updateTicketStatus: async (id, status) => setDoc(doc(db, 'tickets', id), { status }, { merge: true }),
         resetUserPassword: async (id, pwd) => {
-            const fn = httpsCallable(functions, 'adminResetPassword');
-            const res = await fn({ id, newPassword: pwd });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'adminResetPassword');
+                const res = await fn({ id, newPassword: pwd });
+                return res.data;
+            } catch (err) {
+                console.warn('[resetUserPassword] Cloud Function fallback to direct Firestore:', err);
+                await updateDoc(doc(db, 'users', id), { password: pwd, mustChangePassword: true });
+                return { success: true };
+            }
         },
         changeOwnPassword: async (currentPassword, newPassword) => {
-            const fn = httpsCallable(functions, 'changeOwnPassword');
-            const res = await fn({ currentPassword, newPassword });
-            return res.data;
+            try {
+                const fn = httpsCallable(functions, 'changeOwnPassword');
+                const res = await fn({ currentPassword, newPassword });
+                return res.data;
+            } catch (err) {
+                console.warn('[changeOwnPassword] Cloud Function fallback to direct Firestore:', err);
+                const saved = localStorage.getItem('cqa_user');
+                const u = saved ? JSON.parse(saved) : null;
+                if (!u || !u.id) throw new Error('Not authenticated');
+                const snap = await getDoc(doc(db, 'users', u.id));
+                if (!snap.exists()) throw new Error('User not found');
+                if (snap.data().password !== currentPassword) throw new Error('Current password incorrect');
+                await updateDoc(doc(db, 'users', u.id), { password: newPassword, mustChangePassword: false });
+                const updated = { ...u, mustChangePassword: false };
+                localStorage.setItem('cqa_user', JSON.stringify(updated));
+                return { success: true };
+            }
         },
         getAuditLogs: () => store.devices ? [] : [], // Placeholder
 

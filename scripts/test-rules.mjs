@@ -2,10 +2,19 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import net from 'node:net';
 
+import { existsSync } from 'node:fs';
+
 const isWin = process.platform === 'win32';
 const env = { ...process.env };
 
-// Use JAVA_HOME from environment only
+// Auto-detect JDK 21 if JAVA_HOME is not set
+if (!env.JAVA_HOME && isWin) {
+  const localJdk = 'C:\\Users\\biswa\\.gemini\\antigravity-ide\\brain\\95f61990-9706-4a97-95e5-4dc55ddf1a94\\scratch\\jdk-21.0.6+7';
+  if (existsSync(localJdk)) {
+    env.JAVA_HOME = localJdk;
+  }
+}
+
 if (env.JAVA_HOME) {
   env.PATH = `${resolve(env.JAVA_HOME, 'bin')}${isWin ? ';' : ':'}${env.PATH}`;
 }

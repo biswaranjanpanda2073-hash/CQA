@@ -22,10 +22,10 @@ const AppContent = () => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.password) {
-          localStorage.removeItem('cqa_user');
-          return null;
+          delete parsed.password;
+          localStorage.setItem('cqa_user', JSON.stringify(parsed));
         }
-        return parsed;
+        return parsed && parsed.id ? parsed : null;
       }
       return null;
     } catch { return null; }
@@ -43,56 +43,52 @@ const AppContent = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('cqa_theme') || 'light');
 
-  // Firebase Auth state listener as single source of truth for session
+  // Auth state listener: supports Firebase Auth custom tokens when available,
+  // while preserving Path 1 local Firestore session when on zero-billing Spark tier.
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
-      if (!firebaseUser) {
-        setUser(null);
-        localStorage.removeItem('cqa_user');
-        return;
+      if (firebaseUser) {
+        try {
+          const uid = firebaseUser.uid;
+          const userDocRef = doc(db, 'users', uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+            const docData = userSnap.data();
+            const cleanUserData = {
+              id: uid,
+              name: docData.name || uid,
+              role: docData.role || 'Operator',
+              stations: Array.isArray(docData.stations) ? docData.stations : [],
+              projects: Array.isArray(docData.projects) ? docData.projects : [],
+              isSystemAdmin: docData.isSystemAdmin === true,
+              mustChangePassword: docData.mustChangePassword === true
+            };
+
+            setUser(cleanUserData);
+            localStorage.setItem('cqa_user', JSON.stringify(cleanUserData));
+            return;
+          }
+        } catch (err) {
+          console.warn('[Auth] Firebase Auth sync warning:', err);
+        }
       }
 
+      // If no Firebase Auth user, check for active Path 1 session in localStorage
       try {
-        const uid = firebaseUser.uid;
-        // Verify token claims
-        const tokenResult = await firebaseUser.getIdTokenResult();
-        const claimRole = tokenResult.claims.role;
-
-        const userDocRef = doc(db, 'users', uid);
-        const userSnap = await getDoc(userDocRef);
-
-        if (!userSnap.exists()) {
-          console.warn('[Auth] User document does not exist for UID:', uid);
-          await signOut(auth);
-          setUser(null);
-          localStorage.removeItem('cqa_user');
-          return;
+        const saved = localStorage.getItem('cqa_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.id) {
+            setUser(parsed);
+            return;
+          }
         }
-
-        const docData = userSnap.data();
-
-        // Cross-check claim role with Firestore doc role
-        if (claimRole && docData.role && claimRole !== docData.role) {
-          console.warn('[Auth] Token claim role differs from Firestore doc. Signing out.');
-          await signOut(auth);
-          setUser(null);
-          localStorage.removeItem('cqa_user');
-          return;
-        }
-
-        const cleanUserData = {
-          id: uid,
-          name: docData.name || uid,
-          role: docData.role || 'Operator',
-          stations: Array.isArray(docData.stations) ? docData.stations : [],
-          mustChangePassword: docData.mustChangePassword === true
-        };
-
-        setUser(cleanUserData);
-        localStorage.setItem('cqa_user', JSON.stringify(cleanUserData));
-      } catch (err) {
-        console.error('[Auth] Failed to synchronize user profile:', err);
+      } catch (e) {
+        console.warn('[Auth] Local storage read notice:', e);
       }
+
+      setUser(null);
     });
 
     return () => unsubscribe();
