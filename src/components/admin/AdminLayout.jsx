@@ -10,7 +10,8 @@ import {
     History,
     Wrench,
     ShieldAlert,
-    Network
+    Network,
+    Boxes
 } from 'lucide-react';
 import { hasPermission, PERMISSIONS } from '../../utils/rbacEngine';
 import AdminDashboardOverview from './AdminDashboardOverview';
@@ -19,6 +20,7 @@ import AuditLogViewer from './AuditLogViewer';
 import ProjectStudio from './ProjectStudio';
 import StationStudio from './StationStudio';
 import BaanMasterStudio from './BaanMasterStudio';
+import BomStudio from './BomStudio';
 import SerialGovernanceStudio from './SerialGovernanceStudio';
 import WorkflowStudio from './WorkflowStudio';
 import { UserControlSection, MaintenanceSection } from '../SettingsModule';
@@ -57,6 +59,7 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
         { id: 'workflows', label: 'Workflow & Routing Studio', icon: Network, perm: PERMISSIONS.WORKFLOW_VIEW },
         { id: 'stations', label: 'Station Master', icon: Cpu, perm: PERMISSIONS.STATION_VIEW },
         { id: 'baan-master', label: 'BAAN Master Studio', icon: Database, perm: PERMISSIONS.BAAN_PART_VIEW },
+        { id: 'bom-studio', label: 'BOM Master Studio', icon: Boxes, perm: PERMISSIONS.BOM_VIEW },
         { id: 'rbac', label: 'Role & Access (RBAC)', icon: Shield, perm: PERMISSIONS.ROLE_VIEW },
         { id: 'users', label: 'User Governance', icon: Users, perm: PERMISSIONS.USER_VIEW },
         { id: 'unit-config', label: 'Serial & Production Governance', icon: GitBranch, perm: PERMISSIONS.SERIAL_MOVE },
@@ -86,6 +89,9 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
                 return <StationStudio user={user} />;
             case 'baan-master':
                 return <BaanMasterStudio user={user} />;
+            case 'bom-studio':
+            case 'bom-master':
+                return <BomStudio user={user} />;
             default:
                 return <AdminDashboardOverview user={user} onNavigate={setActiveTab} />;
         }
