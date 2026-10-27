@@ -15,11 +15,12 @@ import {
     Layers,
     Sliders,
     History,
-    Shield
+    Shield,
+    Boxes
 } from 'lucide-react';
 
 const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setOpen }) => {
-    const [settingsOpen, setSettingsOpen] = useState(['admin', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection));
+    const [settingsOpen, setSettingsOpen] = useState(['admin', 'bom-studio', 'bom-master', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection));
 
     const mainItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -30,6 +31,7 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
 
     const settingsSubItems = [
         { id: 'admin', label: 'Admin Console', icon: Sliders },
+        { id: 'bom-studio', label: 'BOM Master Studio', icon: Boxes },
         { id: 'rbac', label: 'Role & Access (RBAC)', icon: Shield },
         { id: 'users', label: 'User Governance', icon: ShieldCheck },
         { id: 'unit-config', label: 'Unit/Serial Config', icon: Layers },
@@ -37,7 +39,7 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
         { id: 'maintenance', label: 'Maintenance Mode', icon: Wrench },
     ];
 
-    const isSettingsActive = ['admin', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection);
+    const isSettingsActive = ['admin', 'bom-studio', 'bom-master', 'users', 'maintenance', 'unit-config', 'audit', 'rbac'].includes(activeSection);
 
     const handleNav = (id) => {
         if (id === 'info') {
