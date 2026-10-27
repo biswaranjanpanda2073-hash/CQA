@@ -216,9 +216,7 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
                         color: 'var(--error)',
                         fontSize: '0.8125rem'
                     }}
-                    onClick={() => {
-                        if (window.confirm('End current session?')) onLogout();
-                    }}
+                    onClick={onLogout}
                 >
                     <LogOut size={16} />
                     <span className="font-semibold">Sign Out</span>
