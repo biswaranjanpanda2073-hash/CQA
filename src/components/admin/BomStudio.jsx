@@ -490,6 +490,7 @@ export const BomStudio = ({ user }) => {
                     {/* Right Action Buttons */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                         <button
+                            id="btn-bom-history"
                             className="btn btn-secondary btn-sm"
                             onClick={() => setShowHistoryDrawer(true)}
                             title="View revision timeline & changes"
@@ -500,6 +501,7 @@ export const BomStudio = ({ user }) => {
 
                         {canMrp && (
                             <button
+                                id="btn-mrp-shortage"
                                 className="btn btn-primary btn-sm"
                                 onClick={() => setShowMrpModal(true)}
                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'linear-gradient(135deg, #4f46e5, #06b6d4)' }}
@@ -511,6 +513,7 @@ export const BomStudio = ({ user }) => {
 
                         {canUpload && (
                             <button
+                                id="btn-upload-revision"
                                 className="btn btn-secondary btn-sm"
                                 onClick={handleOpenUpload}
                                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
