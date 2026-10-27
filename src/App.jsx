@@ -34,7 +34,7 @@ const AppContent = () => {
     try {
       const params = new URLSearchParams(window.location.search);
       const section = params.get('section');
-      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance', 'unit-config', 'admin', 'audit', 'rbac'].includes(section)) {
+      if (section && ['dashboard', 'operation', 'info', 'baan', 'profile', 'users', 'maintenance', 'unit-config', 'admin', 'audit', 'rbac', 'bom-studio', 'bom-master'].includes(section)) {
         return section;
       }
     } catch (e) { }
@@ -46,6 +46,15 @@ const AppContent = () => {
   // Auth state listener: supports Firebase Auth custom tokens when available,
   // while preserving Path 1 local Firestore session when on zero-billing Spark tier.
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('logout') === 'true' || window.location.hash.includes('logout')) {
+      localStorage.removeItem('cqa_user');
+      signOut(auth).catch(() => {});
+      setUser(null);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
         try {
