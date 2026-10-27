@@ -29,6 +29,11 @@ import {
     getSafeCheckpoints,
     getSafeProjectList
 } from '../utils/configReader';
+import {
+    DEFAULT_BOM_VARIANTS,
+    SEED_CALCULATOR_V5_BOM,
+    calculateBomMrp
+} from '../utils/bomEngine';
 
 const INITIAL_STORE = {
     devices: {},
@@ -43,6 +48,33 @@ const INITIAL_STORE = {
         partRequests: {},
         partIssuance: {},
         inventoryMovements: {}
+    },
+    bom: {
+        headers: {
+            'CALC_V5': {
+                id: 'CALC_V5',
+                variantId: 'CALC_V5',
+                variantName: 'Calculator V5 (Standard)',
+                category: 'CALCULATOR',
+                activeRevision: 'REV-01',
+                updatedAt: new Date().toISOString(),
+                updatedBy: 'System Preload'
+            }
+        },
+        revisions: {
+            'CALC_V5_REV-01': {
+                id: 'CALC_V5_REV-01',
+                variantId: 'CALC_V5',
+                variantName: 'Calculator V5 (Standard)',
+                revision: 'REV-01',
+                items: SEED_CALCULATOR_V5_BOM,
+                itemCount: 48,
+                changeNotes: 'Initial production baseline BOM (48 items from Tohands R-BOM V5)',
+                isLocked: true,
+                uploadedBy: 'Tohands Engineering',
+                uploadedAt: new Date().toISOString()
+            }
+        }
     },
     wipDevices: {} // Centralized live-sync for active WIP units only
 };
@@ -877,6 +909,218 @@ export const CQAProvider = ({ children }) => {
             unsubscribes.forEach(unsub => unsub());
         };
     }, []);
+
+    // ─── CENTRALIZED BOM & MRP ENGINE ───
+    const syncBomData = useCallback(() => {
+        const unsubs = [];
+        const unsubHeaders = onSnapshot(collection(db, 'bom_headers'), (snapshot) => {
+            const data = {};
+            snapshot.forEach(docSnap => {
+                data[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+            });
+            setStore(prev => ({
+                ...prev,
+                bom: {
+                    ...prev.bom,
+                    headers: {
+                        ...prev.bom?.headers,
+                        ...data
+                    }
+                }
+            }));
+        }, (error) => {
+            console.error('Error syncing bom_headers:', error);
+        });
+        unsubs.push(unsubHeaders);
+
+        const unsubRevs = onSnapshot(collection(db, 'bom_revisions'), (snapshot) => {
+            const data = {};
+            snapshot.forEach(docSnap => {
+                data[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+            });
+            setStore(prev => ({
+                ...prev,
+                bom: {
+                    ...prev.bom,
+                    revisions: {
+                        ...prev.bom?.revisions,
+                        ...data
+                    }
+                }
+            }));
+        }, (error) => {
+            console.error('Error syncing bom_revisions:', error);
+        });
+        unsubs.push(unsubRevs);
+
+        return () => {
+            unsubs.forEach(unsub => unsub());
+        };
+    }, []);
+
+    const saveBomRevision = useCallback(async ({ variantId, variantName, revision, changeNotes, items, user, setAsActive = true }) => {
+        try {
+            const revId = `${variantId}_${revision}`;
+            const revPayload = {
+                id: revId,
+                variantId,
+                variantName: variantName || variantId,
+                revision,
+                items: Array.isArray(items) ? items : [],
+                itemCount: items?.length || 0,
+                changeNotes: changeNotes || 'Revision created',
+                isLocked: true,
+                uploadedBy: user?.name || user?.email || 'Admin',
+                uploadedAt: new Date().toISOString()
+            };
+
+            await setDoc(doc(db, 'bom_revisions', revId), revPayload);
+
+            if (setAsActive) {
+                const headerPayload = {
+                    id: variantId,
+                    variantId,
+                    variantName: variantName || variantId,
+                    activeRevision: revision,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: user?.name || user?.email || 'Admin'
+                };
+                await setDoc(doc(db, 'bom_headers', variantId), headerPayload, { merge: true });
+            }
+
+            setStore(prev => ({
+                ...prev,
+                bom: {
+                    ...prev.bom,
+                    revisions: {
+                        ...(prev.bom?.revisions || {}),
+                        [revId]: revPayload
+                    },
+                    headers: setAsActive ? {
+                        ...(prev.bom?.headers || {}),
+                        [variantId]: {
+                            id: variantId,
+                            variantId,
+                            variantName: variantName || variantId,
+                            activeRevision: revision,
+                            updatedAt: revPayload.uploadedAt,
+                            updatedBy: revPayload.uploadedBy
+                        }
+                    } : (prev.bom?.headers || {})
+                }
+            }));
+
+            await logAdminAction(AUDIT_ACTIONS.BOM_UPLOAD, {
+                variantId,
+                revision,
+                itemCount: items.length,
+                setAsActive
+            }, user);
+
+            return { success: true, revId };
+        } catch (err) {
+            console.error('Error saving BOM revision:', err);
+            return { success: false, error: err.message };
+        }
+    }, []);
+
+    const activateBomRevision = useCallback(async ({ variantId, revision, user }) => {
+        try {
+            const headerRef = doc(db, 'bom_headers', variantId);
+            const updateData = {
+                activeRevision: revision,
+                updatedAt: new Date().toISOString(),
+                updatedBy: user?.name || user?.email || 'Admin'
+            };
+            await setDoc(headerRef, updateData, { merge: true });
+
+            setStore(prev => ({
+                ...prev,
+                bom: {
+                    ...prev.bom,
+                    headers: {
+                        ...(prev.bom?.headers || {}),
+                        [variantId]: {
+                            ...(prev.bom?.headers?.[variantId] || { id: variantId, variantId }),
+                            ...updateData
+                        }
+                    }
+                }
+            }));
+
+            await logAdminAction(AUDIT_ACTIONS.BOM_ACTIVATE, {
+                variantId,
+                revision
+            }, user);
+
+            return { success: true };
+        } catch (err) {
+            console.error('Error activating BOM revision:', err);
+            return { success: false, error: err.message };
+        }
+    }, []);
+
+    const createBatchBaanRequisition = useCallback(async ({ variantId, revision, targetBatchSize, shortageRows, user }) => {
+        try {
+            const validShortages = (shortageRows || []).filter(r => r.deficit > 0);
+            if (validShortages.length === 0) {
+                return { success: true, count: 0, message: 'No shortages to request' };
+            }
+
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const createdRequests = [];
+
+            for (const row of validShortages) {
+                const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const requestId = `REQ-BOM-${dateStr}-${randomStr}`;
+                const reqData = {
+                    id: requestId,
+                    partNo: row.partNumber,
+                    partName: row.partName,
+                    requestedQty: row.deficit,
+                    consumedQty: 0,
+                    remainingQty: row.deficit,
+                    status: 'Requested',
+                    source: `MRP_PLAN_${variantId}_${revision}`,
+                    targetBatchSize: Number(targetBatchSize) || 1,
+                    requestedBy: user?.name || user?.email || 'BOM Studio MRP',
+                    requestedAt: new Date().toISOString()
+                };
+
+                await setDoc(doc(db, 'baan_part_requests', requestId), reqData);
+                createdRequests.push(requestId);
+            }
+
+            await logAdminAction(AUDIT_ACTIONS.BOM_MRP_REQUISITION, {
+                variantId,
+                revision,
+                targetBatchSize,
+                requestedCount: createdRequests.length,
+                partNumbers: validShortages.map(s => s.partNumber)
+            }, user);
+
+            return { success: true, count: createdRequests.length, requestIds: createdRequests };
+        } catch (err) {
+            console.error('Error creating batch BAAN requisition:', err);
+            return { success: false, error: err.message };
+        }
+    }, []);
+
+    const getActiveBom = useCallback((variantId = 'CALC_V5') => {
+        const header = store.bom?.headers?.[variantId] || {
+            id: variantId,
+            variantId,
+            variantName: variantId === 'CALC_V5' ? 'Calculator V5 (Standard)' : variantId,
+            activeRevision: 'REV-01'
+        };
+        const revId = `${variantId}_${header.activeRevision || 'REV-01'}`;
+        const rev = store.bom?.revisions?.[revId] || (variantId === 'CALC_V5' ? store.bom?.revisions?.['CALC_V5_REV-01'] : null);
+        return {
+            header,
+            revision: rev,
+            items: rev?.items || (variantId === 'CALC_V5' ? SEED_CALCULATOR_V5_BOM : [])
+        };
+    }, [store.bom]);
 
     // ─── UNIT / SERIAL CONFIGURATION & MOVEMENT ENGINE ───
     const validateMovementUnits = useCallback(async (rawSerialNumbers, targetStationId = null, user = null) => {
@@ -2719,6 +2963,12 @@ export const CQAProvider = ({ children }) => {
             return recommendations;
         },
         syncBaanData,
+        // Centralized BOM & MRP
+        syncBomData,
+        saveBomRevision,
+        activateBomRevision,
+        createBatchBaanRequisition,
+        getActiveBom,
         // Phase 1 Governance & Safe Dynamic Configuration
         customRoles,
         configGov,

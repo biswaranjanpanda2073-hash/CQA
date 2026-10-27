@@ -17,7 +17,8 @@ import {
     FileCheck,
     Cpu,
     GitBranch,
-    ShieldAlert
+    ShieldAlert,
+    Boxes
 } from 'lucide-react';
 import { db, doc, getDoc, setDoc, onSnapshot, collection, getCountFromServer } from '../../firebase';
 import { bootstrapConfiguration, checkConfigStatus } from '../../utils/configBootstrap';
@@ -255,6 +256,19 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
 
             {/* Hub Navigation Tiles */}
             <div className="grid md-grid-3 gap-4">
+                <div className="card clickable hover-lift" onClick={() => onNavigate('bom-studio')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(6, 182, 212, 0.15))', color: 'var(--primary)', flexShrink: 0 }}>
+                            <Boxes size={24} strokeWidth={2.5} />
+                        </div>
+                        <ArrowRight size={18} color="var(--text-muted)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                    </div>
+                    <div>
+                        <h3 className="font-extrabold" style={{ fontSize: '1.125rem', marginBottom: '0.35rem', lineHeight: 1.3 }}>BOM Master Studio</h3>
+                        <p className="text-muted" style={{ fontSize: '0.8125rem', lineHeight: 1.6, margin: 0 }}>Calculator Bill of Materials, immutable revision control, and BAAN MRP shortage planning.</p>
+                    </div>
+                </div>
+
                 <div className="card clickable hover-lift" onClick={() => onNavigate('projects')} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div className="flex-center" style={{ width: 48, height: 48, borderRadius: 'var(--radius-md)', background: 'var(--primary-alpha)', color: 'var(--primary)', flexShrink: 0 }}>

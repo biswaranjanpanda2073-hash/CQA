@@ -28,7 +28,8 @@ import {
     Plus,
     Loader2,
     Settings,
-    Sparkles
+    Sparkles,
+    Boxes
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -38,6 +39,7 @@ import ImageCapture from './ImageCapture';
 import { CALCULATOR_UI_STATIONS } from '../utils/calculatorEngine';
 import { getValidDestinationStations } from '../utils/movementEngine';
 import CalculatorStationForm from './CalculatorStationForm';
+import BomInspectorModal from './common/BomInspectorModal';
 import { 
     TerminalLayout, 
     TerminalHeader, 
@@ -623,6 +625,7 @@ export const StationExecutionView = ({ stationId, project, user }) => {
     });
     const [isSubmittingMove, setIsSubmittingMove] = useState(false);
     const [showStationConfig, setShowStationConfig] = useState(false);
+    const [showBomModal, setShowBomModal] = useState(false);
 
     const projectCategory = getProjectCategory(project);
     const isAdvancedEligible = projectCategory === 'Peripherals' || projectCategory === 'Inward QC';
@@ -817,27 +820,50 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                 ) : null
                             }
                             extraMeta={
-                                <button
-                                    type="button"
-                                    onClick={() => setShowStationConfig(true)}
-                                    className="terminal-status-pill standby"
-                                    title="Station Configuration & Operational Controls"
-                                    style={{
-                                        cursor: 'pointer',
-                                        border: '1px solid var(--border-color, #e5e7eb)',
-                                        background: 'var(--bg-card, #ffffff)',
-                                        color: 'var(--text-primary, #111827)',
-                                        fontWeight: 600,
-                                        gap: '5px',
-                                        padding: '3px 9px',
-                                        fontSize: '0.78rem',
-                                        display: 'inline-flex',
-                                        alignItems: 'center'
-                                    }}
-                                >
-                                    <Settings size={13} style={{ color: 'var(--primary, #0ea5e9)' }} />
-                                    <span>Station Config</span>
-                                </button>
+                                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowBomModal(true)}
+                                        className="terminal-status-pill standby"
+                                        title="Calculator Bill of Materials (BOM) & Component Reference"
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: '1px solid var(--border-color, #e5e7eb)',
+                                            background: 'var(--bg-card, #ffffff)',
+                                            color: 'var(--text-primary, #111827)',
+                                            fontWeight: 600,
+                                            gap: '5px',
+                                            padding: '3px 9px',
+                                            fontSize: '0.78rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <Boxes size={13} style={{ color: 'var(--primary, #4f46e5)' }} />
+                                        <span>BOM Ref</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowStationConfig(true)}
+                                        className="terminal-status-pill standby"
+                                        title="Station Configuration & Operational Controls"
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: '1px solid var(--border-color, #e5e7eb)',
+                                            background: 'var(--bg-card, #ffffff)',
+                                            color: 'var(--text-primary, #111827)',
+                                            fontWeight: 600,
+                                            gap: '5px',
+                                            padding: '3px 9px',
+                                            fontSize: '0.78rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <Settings size={13} style={{ color: 'var(--primary, #0ea5e9)' }} />
+                                        <span>Station Config</span>
+                                    </button>
+                                </div>
                             }
                         />
 
@@ -1289,6 +1315,16 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                     </div>
                 </div>
             )}
+
+            {/* Contextual BOM Inspector Modal */}
+            <BomInspectorModal
+                isOpen={showBomModal}
+                onClose={() => setShowBomModal(false)}
+                stationId={selectedStation?.id}
+                stationName={selectedStation?.name}
+                user={user}
+                project={project}
+            />
         </TerminalLayout>
     );
 };
