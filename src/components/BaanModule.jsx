@@ -42,11 +42,13 @@ import {
     Archive,
     ArchiveRestore,
     Download,
-    Check
+    Check,
+    PackageCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCQA } from '../hooks/useCQA';
 import BaanBulkInward from './BaanBulkInward';
+import BaanOpeningStock from './BaanOpeningStock';
 
 // ─── Sub-Components ───
 
@@ -1116,6 +1118,12 @@ const BaanInward = () => {
                     <FileSpreadsheet size={15} /> Bulk Upload (Excel / CSV)
                 </button>
                 <button 
+                    className={`baan-btn ${activeTab === 'opening' ? 'primary' : 'secondary'}`}
+                    onClick={() => setActiveTab('opening')}
+                >
+                    <PackageCheck size={15} /> Opening Stock
+                </button>
+                <button 
                     className={`baan-btn ${activeTab === 'logs' ? 'primary' : 'secondary'}`}
                     onClick={() => setActiveTab('logs')}
                 >
@@ -1125,6 +1133,7 @@ const BaanInward = () => {
 
             {activeTab === 'manual' && <BaanManualInward />}
             {activeTab === 'bulk' && <BaanBulkInward />}
+            {activeTab === 'opening' && <BaanOpeningStock />}
             {activeTab === 'logs' && <BaanInwardHistory />}
         </div>
     );
@@ -3785,9 +3794,9 @@ const BaanModule = ({ user }) => {
             category: 'Inventory',
             items: [
                 { id: 'inventory', label: 'Inventory Stock', icon: Package },
-                { id: 'locations', label: 'Locations', icon: MapPin, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive', 'Inventory Controller'] },
-                { id: 'inward', label: 'Inward Parts', icon: PlusCircle, role: ['Store Operator', 'Admin', 'Store Manager', 'Store Executive', 'Inventory Controller'] },
-                { id: 'reverse', label: 'Reverse / Returns', icon: RotateCcw, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
+                { id: 'locations', label: 'Locations', icon: MapPin, role: ['Store Operator', 'Admin', 'Super Admin', 'Supervisor', 'Store Manager', 'Store Executive', 'Inventory Controller'] },
+                { id: 'inward', label: 'Inward Parts', icon: PlusCircle, role: ['Store Operator', 'Admin', 'Super Admin', 'Store Manager', 'Store Executive', 'Inventory Controller'] },
+                { id: 'reverse', label: 'Reverse / Returns', icon: RotateCcw, role: ['Store Operator', 'Admin', 'Super Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
             ]
         },
         {
@@ -3795,14 +3804,14 @@ const BaanModule = ({ user }) => {
             items: [
                 { id: 'request', label: 'Request Part', icon: Send },
                 { id: 'request_history', label: 'Request History', icon: History },
-                { id: 'issuance', label: 'Store Issuance', icon: ClipboardList, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] },
-                { id: 'issuance_history', label: 'Issuance Logs', icon: Clock, role: ['Store Operator', 'Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
+                { id: 'issuance', label: 'Store Issuance', icon: ClipboardList, role: ['Store Operator', 'Admin', 'Super Admin', 'Supervisor', 'Store Manager', 'Store Executive'] },
+                { id: 'issuance_history', label: 'Issuance Logs', icon: Clock, role: ['Store Operator', 'Admin', 'Super Admin', 'Supervisor', 'Store Manager', 'Store Executive'] }
             ]
         },
         {
             category: 'Reports',
             items: [
-                { id: 'analytics', label: 'Analytics & Export', icon: FileBarChart, role: ['Supervisor', 'Admin', 'Store Manager', 'Inventory Controller', 'Production Manager'] }
+                { id: 'analytics', label: 'Analytics & Export', icon: FileBarChart, role: ['Supervisor', 'Admin', 'Super Admin', 'Store Manager', 'Inventory Controller', 'Production Manager'] }
             ]
         }
     ];
@@ -3829,6 +3838,7 @@ const BaanModule = ({ user }) => {
             <div className="baan-nav-group-container">
                 {navClusters.map((cluster, cIdx) => {
                     const availableItems = cluster.items.filter(item => {
+                        if (user?.role === 'Super Admin' || user?.isSystemAdmin) return true;
                         if (!item.role) return true;
                         return item.role.includes(user?.role);
                     });

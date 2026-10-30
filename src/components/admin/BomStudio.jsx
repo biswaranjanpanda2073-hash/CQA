@@ -31,8 +31,6 @@ import {
 import { useCQA } from '../../hooks/useCQA';
 import { hasPermission, PERMISSIONS } from '../../utils/rbacEngine';
 import {
-    DEFAULT_BOM_VARIANTS,
-    SEED_CALCULATOR_V5_BOM,
     BOM_CATEGORIES,
     parseBomSpreadsheet,
     calculateBomMrp,
@@ -71,23 +69,23 @@ export const BomStudio = ({ user }) => {
     // Available Variants
     const customHeaders = store.bom?.headers || {};
     const variants = useMemo(() => {
-        const list = [...DEFAULT_BOM_VARIANTS];
-        Object.values(customHeaders).forEach(h => {
-            if (!list.some(v => v.id === h.variantId)) {
-                list.push({
-                    id: h.variantId,
-                    name: h.variantName || h.variantId,
-                    category: h.category || 'CALCULATOR',
-                    defaultActiveRevision: h.activeRevision || 'REV-01',
-                    description: h.description || 'Custom product variant'
-                });
-            }
-        });
-        return list;
+        return Object.values(customHeaders).map(h => ({
+            id: h.variantId || h.id,
+            name: h.variantName || h.name || h.variantId,
+            category: h.category || 'CALCULATOR',
+            defaultActiveRevision: h.activeRevision || 'REV-01',
+            description: h.description || ''
+        }));
     }, [customHeaders]);
 
     // Active Variant Selection
-    const [selectedVariantId, setSelectedVariantId] = useState('CALC_V5');
+    const [selectedVariantId, setSelectedVariantId] = useState('');
+
+    useEffect(() => {
+        if (!selectedVariantId && variants.length > 0) {
+            setSelectedVariantId(variants[0].id);
+        }
+    }, [variants, selectedVariantId]);
 
     // Active Header & Revision Info
     const activeHeader = customHeaders[selectedVariantId] || {
@@ -99,21 +97,8 @@ export const BomStudio = ({ user }) => {
     // All available revisions for this variant
     const allRevisions = store.bom?.revisions || {};
     const variantRevisions = useMemo(() => {
+        if (!selectedVariantId) return [];
         const list = Object.values(allRevisions).filter(r => r.variantId === selectedVariantId);
-        // If empty and CALC_V5, provide REV-01 seed representation
-        if (list.length === 0 && selectedVariantId === 'CALC_V5') {
-            return [{
-                id: 'CALC_V5_REV-01',
-                variantId: 'CALC_V5',
-                variantName: 'Calculator V5 (Standard)',
-                revision: 'REV-01',
-                itemCount: 48,
-                changeNotes: 'Initial production baseline BOM (48 items from Tohands R-BOM V5)',
-                isLocked: true,
-                uploadedBy: 'Tohands Engineering',
-                uploadedAt: new Date().toISOString()
-            }];
-        }
         return list.sort((a, b) => (b.revision || '').localeCompare(a.revision || ''));
     }, [allRevisions, selectedVariantId]);
 
@@ -132,11 +117,8 @@ export const BomStudio = ({ user }) => {
         if (currentRevisionDoc?.items && Array.isArray(currentRevisionDoc.items)) {
             return currentRevisionDoc.items;
         }
-        if (selectedVariantId === 'CALC_V5') {
-            return SEED_CALCULATOR_V5_BOM;
-        }
         return [];
-    }, [currentRevisionDoc, selectedVariantId]);
+    }, [currentRevisionDoc]);
 
     const isCurrentActive = viewedRevision === (activeHeader.activeRevision || 'REV-01');
 
@@ -379,7 +361,7 @@ export const BomStudio = ({ user }) => {
             variantName: newVariantName.trim(),
             revision: 'REV-01',
             changeNotes: `Initial creation of ${newVariantName.trim()}`,
-            items: SEED_CALCULATOR_V5_BOM, // Pre-clone from Calculator V5 as baseline
+            items: [],
             user,
             setAsActive: true
         });

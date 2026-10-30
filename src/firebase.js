@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, connectFirestoreEmulator, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, query, orderBy, where, addDoc, getCountFromServer, limit } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator, collection, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, runTransaction, Timestamp, query, orderBy, where, addDoc, getCountFromServer, limit } from "firebase/firestore";
 import { getStorage, connectStorageEmulator, ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
-import { getAuth, connectAuthEmulator, signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
+import { getAuth, connectAuthEmulator, signInWithCustomToken, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFunctions, connectFunctionsEmulator, httpsCallable as firebaseHttpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
@@ -69,9 +69,9 @@ const ticketsCol = collection(db, 'tickets');
 
 export { 
     app, db, storage, auth, functions, devicesCol, usersCol, settingsCol, ticketsCol, 
-    doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, 
+    doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, runTransaction, Timestamp,
     query, orderBy, collection, where, addDoc, getCountFromServer, limit,
     ref, uploadBytes, getDownloadURL, uploadString,
-    signInWithCustomToken, onAuthStateChanged, signOut,
+    signInWithCustomToken, signInWithEmailAndPassword, onAuthStateChanged, signOut,
     httpsCallable
 };
