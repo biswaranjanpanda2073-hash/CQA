@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL 16 Relational Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cqa-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: cqa_db
+      POSTGRES_USER: cqa_admin
+      POSTGRES_PASSWORD: cqa_password_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - cqa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cqa_admin -d cqa_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Kotlin Spring Boot 3 Backend
+  backend:
+    build:
+      context: ./cqa-backend
+      dockerfile: Dockerfile
+    container_name: cqa-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cqa_db
+      SPRING_DATASOURCE_USERNAME: cqa_admin
+      SPRING_DATASOURCE_PASSWORD: cqa_password_secret
+      SPRING_FLYWAY_ENABLED: "true"
+      JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+    ports:
+      - "8080:8080"
+
+  # 3. React Vite MES Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: cqa-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080/api
+      VITE_WS_URL: ws://localhost:8080/ws
+    depends_on:
+      - backend
+
+volumes:
+  cqa_pgdata:
+    driver: local

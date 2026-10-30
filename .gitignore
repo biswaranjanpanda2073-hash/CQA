@@ -33,3 +33,9 @@ serviceAccountKey*.json
 *.zip
 backups/
 backup_*/
+
+# Gradle & Kotlin Backend
+cqa-backend/build/
+cqa-backend/.gradle/
+.gradle/
+

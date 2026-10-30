@@ -35,7 +35,7 @@ function checkPortInUse(port) {
 }
 
 const portInUse = await checkPortInUse(8080);
-const targetTest = process.argv[2] || 'tests/*.rules.test.js';
+const targetTest = process.argv[2] || 'tests/firestore.rules.test.js tests/baan.rules.test.js';
 let child;
 
 if (portInUse) {
