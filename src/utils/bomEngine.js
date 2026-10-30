@@ -368,6 +368,8 @@ export const SEED_CALCULATOR_V5_BOM = [
     stationTags: inferStationTags(item.category, item.partName, item.partDescription)
 }));
 
+export const CALC_V5_SEED_COMPONENTS = SEED_CALCULATOR_V5_BOM;
+
 // ═══════════════════════════════════════════════════════════════
 // OPTION B: INTERNAL BAAN INVENTORY LINKING & MRP CALCULATION
 // ═══════════════════════════════════════════════════════════════
@@ -576,3 +578,52 @@ export const exportMrpReport = (mrpResult, variantName = 'Calculator V5', revisi
     XLSX.utils.book_append_sheet(wb, ws, 'MRP_Planning_Report');
     XLSX.writeFile(wb, `CQA_MRP_${variantName.replace(/\s+/g, '_')}_${mrpResult.targetBatchSize}Units_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
+
+/**
+ * Generates and downloads the pre-filled Opening Stock Template (.xlsx).
+ * Populates BOM components, descriptions, category, current system stock (read-only reference),
+ * and provides blank/editable columns for Physical Quantity, Location Name, Location Code, and Remarks.
+ */
+export const downloadOpeningStockTemplate = (bomComponents = [], variantName = 'Calculator_V5', revision = 'REV-01', existingStockMap = {}) => {
+    const templateRows = bomComponents.map((item, idx) => {
+        const pn = String(item.partNumber || '').trim();
+        const currentQty = existingStockMap[pn] || 0;
+        return {
+            'Item No.': item.itemNo || (idx + 1),
+            'Part Number': pn,
+            'Part Name': item.partName || '',
+            'Part Description': item.partDescription || '',
+            'Category': item.category || 'Mechanical',
+            'Current System Stock': currentQty,
+            'Physical Quantity': '', // User fills this
+            'Location Name': '',     // e.g. 'Rack 1'
+            'Location Code': '',     // e.g. 'Code A'
+            'Per Unit Cost': '',     // Optional
+            'Remarks': ''            // Optional
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(templateRows);
+
+    // Set column widths for comfortable editing
+    ws['!cols'] = [
+        { wch: 8 },  // Item No.
+        { wch: 18 }, // Part Number
+        { wch: 28 }, // Part Name
+        { wch: 32 }, // Part Description
+        { wch: 18 }, // Category
+        { wch: 18 }, // Current System Stock
+        { wch: 18 }, // Physical Quantity
+        { wch: 18 }, // Location Name
+        { wch: 15 }, // Location Code
+        { wch: 15 }, // Per Unit Cost
+        { wch: 25 }  // Remarks
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Opening_Stock_Count');
+    const cleanVariant = String(variantName || 'BOM').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `CQA_Opening_Stock_Template_${cleanVariant}_${revision}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+};
+

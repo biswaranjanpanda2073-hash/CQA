@@ -3,9 +3,21 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function roleOf()   { return request.auth.token.role; }
+    function roleOf()   { 
+      return request.auth.token.role != null ? request.auth.token.role : 
+             (exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : 'Operator');
+    }
     function isAdmin()  { return signedIn() && roleOf() in ['Admin', 'Super Admin']; }
     function isSuper()  { return signedIn() && roleOf() == 'Super Admin'; }
+    function isStoreManager() { return signedIn() && roleOf() in ['Store Manager', 'Admin', 'Super Admin']; }
+    function isStoreExecutive() { return signedIn() && roleOf() in ['Store Executive', 'Store Manager', 'Admin', 'Super Admin']; }
+    function isProductionManager() { return signedIn() && roleOf() in ['Production Manager', 'Admin', 'Super Admin']; }
+    function isSkuLocked(sku) {
+      return exists(/databases/$(database)/documents/baan_inventory_locks/$(sku))
+             && get(/databases/$(database)/documents/baan_inventory_locks/$(sku)).data.status == 'ACTIVE'
+             && get(/databases/$(database)/documents/baan_inventory_locks/$(sku)).data.expiresAt > request.time;
+    }
 
     // Users: own doc or admin may read. All writes via Cloud Functions only.
     match /users/{userId} {
@@ -36,9 +48,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Audit logs: append-only, caller identity must match
+    // Audit logs: append-only, caller identity must match. Admins and Store Managers can read.
     match /audit_logs/{logId} {
-      allow read:   if isAdmin();
+      allow read:   if isAdmin() || isStoreManager();
       allow create: if signedIn() && request.resource.data.action != null
                     && request.resource.data.actorId == request.auth.uid;
       allow update, delete: if false;
@@ -60,15 +72,125 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // BAAN inventory: operators consume/request parts, so signed-in users can create/update.
-    match /baan_parts/{id}             { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
-    match /baan_batches/{id}           { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
-    match /baan_part_requests/{id}     { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
-    match /baan_part_issuance/{id}     { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
-    match /baan_bulk_uploads/{id}      { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if false; }
-    match /baan_locations/{id}         { allow read: if signedIn(); allow create, update: if signedIn(); allow delete: if isAdmin(); }
-    match /baan_inventory_movements/{id} { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
-    match /baan_inward_logs/{id}         { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
+    // BOM Master Data
+    match /bom_headers/{variantId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /bom_revisions/{revId} {
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // BAAN Parts Master
+    match /baan_parts/{sku} {
+      allow read: if signedIn();
+      allow create, update: if isStoreManager();
+      allow delete: if isAdmin();
+    }
+
+    // BAAN Batches: Guarded against unauthorized writes and active physical count locks
+    match /baan_batches/{batchId} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive()
+                    && request.resource.data.quantityAvailable >= 0
+                    && !isSkuLocked(request.resource.data.partNumber);
+      allow update: if isStoreExecutive()
+                    && request.resource.data.partNumber == resource.data.partNumber
+                    && request.resource.data.quantityAvailable >= 0
+                    && (!isSkuLocked(resource.data.partNumber)
+                        || (request.resource.data.sessionId != null 
+                            && request.resource.data.sessionId == get(/databases/$(database)/documents/baan_inventory_locks/$(resource.data.partNumber)).data.sessionId));
+      allow delete: if false;
+    }
+
+    // BAAN Operational Collections
+    match /baan_part_requests/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+    match /baan_part_issuance/{id} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive();
+      allow update, delete: if false;
+    }
+    match /baan_bulk_uploads/{id} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive();
+      allow update, delete: if false;
+    }
+    match /baan_locations/{id} {
+      allow read: if signedIn();
+      allow create, update: if isStoreManager();
+      allow delete: if isAdmin();
+    }
+    match /baan_inventory_movements/{id} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive();
+      allow update, delete: if false;
+    }
+    match /baan_inward_logs/{id} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive();
+      allow update, delete: if false;
+    }
+
+    // BAAN Opening Stock Sessions
+    match /baan_opening_stocks/{sessionId} {
+      allow read: if signedIn();
+      allow create: if isStoreManager() && request.resource.data.sessionId == sessionId;
+      allow update: if isStoreManager()
+                    && request.resource.data.sessionId == resource.data.sessionId
+                    && resource.data.status != 'COMPLETED';
+      allow delete: if false;
+    }
+
+    // BAAN Inventory Locks
+    match /baan_inventory_locks/{sku} {
+      allow read: if signedIn();
+      allow create: if isStoreManager()
+                    && request.resource.data.sku == sku
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.fencingToken == 1
+                    && request.resource.data.status == 'ACTIVE'
+                    && request.resource.data.expiresAt > request.time;
+      allow update: if isStoreManager()
+                    && (
+                      (resource.data.sessionId == request.resource.data.sessionId && request.resource.data.expiresAt > request.time)
+                      ||
+                      (resource.data.expiresAt < request.time && request.resource.data.fencingToken == resource.data.fencingToken + 1)
+                      ||
+                      (resource.data.sessionId == request.resource.data.sessionId && request.resource.data.status == 'RELEASED')
+                    );
+      allow delete: if false;
+    }
+
+    // BAAN Inventory Discrepancies (Two-Person Approval Gate)
+    match /baan_inventory_discrepancies/{ticketId} {
+      allow read: if signedIn();
+      allow create: if isStoreExecutive()
+                    && request.resource.data.status == 'PENDING_FIRST_APPROVAL'
+                    && request.resource.data.firstApproverUid == null
+                    && request.resource.data.secondApproverUid == null;
+      allow update: if (
+        // First Approval by Store Manager
+        (isStoreManager() && resource.data.status == 'PENDING_FIRST_APPROVAL'
+         && request.resource.data.status == 'PENDING_SECOND_APPROVAL'
+         && request.resource.data.firstApproverUid == request.auth.uid
+         && request.resource.data.sku == resource.data.sku
+         && request.resource.data.delta == resource.data.delta)
+        ||
+        // Second Approval by Production Manager (Enforce Distinct UID)
+        (isProductionManager() && resource.data.status == 'PENDING_SECOND_APPROVAL'
+         && request.resource.data.status == 'APPROVED'
+         && request.auth.uid != resource.data.firstApproverUid
+         && request.resource.data.firstApproverUid == resource.data.firstApproverUid
+         && request.resource.data.secondApproverUid == request.auth.uid)
+      );
+      allow delete: if false;
+    }
 
     // Default deny
     match /{document=**} { allow read, write: if false; }

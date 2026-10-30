@@ -15,7 +15,7 @@ import {
     Filter
 } from 'lucide-react';
 import { useCQA } from '../../hooks/useCQA';
-import { SEED_CALCULATOR_V5_BOM, BOM_CATEGORIES } from '../../utils/bomEngine';
+import { BOM_CATEGORIES } from '../../utils/bomEngine';
 
 export const BomInspectorModal = ({
     isOpen,
@@ -29,15 +29,15 @@ export const BomInspectorModal = ({
 
     if (!isOpen) return null;
 
-    // Load active BOM for Calculator V5
+    // Load active BOM for Calculator
     const activeBom = useMemo(() => {
         return getActiveBom?.('CALC_V5') || {
-            header: { variantName: 'Calculator V5 (Standard)', activeRevision: 'REV-01' },
-            items: SEED_CALCULATOR_V5_BOM
+            header: null,
+            items: []
         };
     }, [getActiveBom]);
 
-    const items = activeBom.items || SEED_CALCULATOR_V5_BOM;
+    const items = activeBom?.items || [];
     const baanParts = store.baan?.parts || {};
     const baanBatches = store.baan?.batches || {};
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import {
-    db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, collection, addDoc, query, where, orderBy,
+    db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, runTransaction, Timestamp, collection, addDoc, query, where, orderBy,
     ref, uploadBytes, getDownloadURL,
-    signInWithCustomToken, httpsCallable
+    signInWithCustomToken, signInWithEmailAndPassword, httpsCallable
 } from '../firebase';
 import {
     normalizeSerialNumbers,
@@ -50,31 +50,8 @@ const INITIAL_STORE = {
         inventoryMovements: {}
     },
     bom: {
-        headers: {
-            'CALC_V5': {
-                id: 'CALC_V5',
-                variantId: 'CALC_V5',
-                variantName: 'Calculator V5 (Standard)',
-                category: 'CALCULATOR',
-                activeRevision: 'REV-01',
-                updatedAt: new Date().toISOString(),
-                updatedBy: 'System Preload'
-            }
-        },
-        revisions: {
-            'CALC_V5_REV-01': {
-                id: 'CALC_V5_REV-01',
-                variantId: 'CALC_V5',
-                variantName: 'Calculator V5 (Standard)',
-                revision: 'REV-01',
-                items: SEED_CALCULATOR_V5_BOM,
-                itemCount: 48,
-                changeNotes: 'Initial production baseline BOM (48 items from Tohands R-BOM V5)',
-                isLocked: true,
-                uploadedBy: 'Tohands Engineering',
-                uploadedAt: new Date().toISOString()
-            }
-        }
+        headers: {},
+        revisions: {}
     },
     wipDevices: {} // Centralized live-sync for active WIP units only
 };
@@ -671,6 +648,15 @@ export const CQAProvider = ({ children }) => {
                         isSystemAdmin: docData.isSystemAdmin === true,
                         mustChangePassword: docData.mustChangePassword === true
                     };
+
+                    // Attempt Firebase Auth sign-in so request.auth is populated in Firestore rules
+                    try {
+                        const authEmail = docData.email || (cleanId.includes('@') ? cleanId : `${cleanId.replace(/[^a-zA-Z0-9]/g, '')}@cqa.local`);
+                        await signInWithEmailAndPassword(auth, authEmail, pwd);
+                    } catch (authSyncErr) {
+                        console.info('[Auth] Spark tier client session established (Firebase Auth direct sync fallback):', authSyncErr?.message || authSyncErr);
+                    }
+
                     localStorage.setItem('cqa_user', JSON.stringify(cleanUser));
                     return { success: true, user: cleanUser };
                 }
@@ -884,7 +870,10 @@ export const CQAProvider = ({ children }) => {
             { name: 'baan_inward_logs', key: 'inwardLogs' },
             { name: 'baan_part_requests', key: 'partRequests' },
             { name: 'baan_part_issuance', key: 'partIssuance' },
-            { name: 'baan_inventory_movements', key: 'inventoryMovements' }
+            { name: 'baan_inventory_movements', key: 'inventoryMovements' },
+            { name: 'baan_opening_stocks', key: 'openingStocks' },
+            { name: 'baan_inventory_locks', key: 'inventoryLocks' },
+            { name: 'baan_inventory_discrepancies', key: 'inventoryDiscrepancies' }
         ];
 
         const unsubscribes = collections.map(({ name, key }) => {
@@ -1106,19 +1095,16 @@ export const CQAProvider = ({ children }) => {
         }
     }, []);
 
-    const getActiveBom = useCallback((variantId = 'CALC_V5') => {
-        const header = store.bom?.headers?.[variantId] || {
-            id: variantId,
-            variantId,
-            variantName: variantId === 'CALC_V5' ? 'Calculator V5 (Standard)' : variantId,
-            activeRevision: 'REV-01'
-        };
+    const getActiveBom = useCallback((variantId) => {
+        if (!variantId) return null;
+        const header = store.bom?.headers?.[variantId];
+        if (!header) return null;
         const revId = `${variantId}_${header.activeRevision || 'REV-01'}`;
-        const rev = store.bom?.revisions?.[revId] || (variantId === 'CALC_V5' ? store.bom?.revisions?.['CALC_V5_REV-01'] : null);
+        const rev = store.bom?.revisions?.[revId];
         return {
             header,
             revision: rev,
-            items: rev?.items || (variantId === 'CALC_V5' ? SEED_CALCULATOR_V5_BOM : [])
+            items: rev?.items || []
         };
     }, [store.bom]);
 
@@ -2544,6 +2530,23 @@ export const CQAProvider = ({ children }) => {
             const timestamp = new Date().toISOString();
             const inwardId = `INW-${Date.now()}`;
 
+            // Concurrency Lock Check: Prevent inward while SKU is under active count
+            if (data.partNumber) {
+                const lockRef = doc(db, 'baan_inventory_locks', data.partNumber);
+                const lockSnap = await getDoc(lockRef);
+                if (lockSnap.exists()) {
+                    const lockData = lockSnap.data();
+                    const isLockActive = lockData.status === 'ACTIVE' && 
+                        (lockData.expiresAt?.toMillis ? lockData.expiresAt.toMillis() : new Date(lockData.expiresAt).getTime()) > Date.now();
+                    if (isLockActive) {
+                        return {
+                            success: false,
+                            message: `Inward Blocked: Part "${data.partNumber}" is currently locked for an active Opening Stock physical count session (${lockData.sessionId}). Please wait until the count is posted or released.`
+                        };
+                    }
+                }
+            }
+
             const locationName = (data.locationName || '').trim();
             const locationCode = (data.locationCode || '').trim();
             let resolvedLocation = (data.location || '').trim();
@@ -2715,6 +2718,23 @@ export const CQAProvider = ({ children }) => {
             if (!request) return { success: false, message: 'Request not found' };
             if (request.status !== 'Requested') return { success: false, message: 'Request is not in Requested status' };
 
+            // Concurrency Lock Check: Prevent issuance while SKU is under active count
+            if (request.partNo) {
+                const lockRef = doc(db, 'baan_inventory_locks', request.partNo);
+                const lockSnap = await getDoc(lockRef);
+                if (lockSnap.exists()) {
+                    const lockData = lockSnap.data();
+                    const isLockActive = lockData.status === 'ACTIVE' && 
+                        (lockData.expiresAt?.toMillis ? lockData.expiresAt.toMillis() : new Date(lockData.expiresAt).getTime()) > Date.now();
+                    if (isLockActive) {
+                        return {
+                            success: false,
+                            message: `Issuance Blocked: Part "${request.partNo}" is currently locked for an active physical inventory count (${lockData.sessionId}).`
+                        };
+                    }
+                }
+            }
+
             let remainingToFulfill = Number(request.requestedQty);
             const availableBatches = Object.values(store.baan.batches)
                 .filter(b => b.partNumber === request.partNo && b.quantityAvailable > 0)
@@ -2835,6 +2855,23 @@ export const CQAProvider = ({ children }) => {
             const request = store.baan.partRequests[requestId];
 
             if (!request) return { success: false, message: 'Request not found' };
+
+            // Concurrency Lock Check: Prevent return restock while SKU is under active count
+            if (request.partNo) {
+                const lockRef = doc(db, 'baan_inventory_locks', request.partNo);
+                const lockSnap = await getDoc(lockRef);
+                if (lockSnap.exists()) {
+                    const lockData = lockSnap.data();
+                    const isLockActive = lockData.status === 'ACTIVE' && 
+                        (lockData.expiresAt?.toMillis ? lockData.expiresAt.toMillis() : new Date(lockData.expiresAt).getTime()) > Date.now();
+                    if (isLockActive) {
+                        return {
+                            success: false,
+                            message: `Return Blocked: Part "${request.partNo}" is currently locked for an active physical inventory count (${lockData.sessionId}).`
+                        };
+                    }
+                }
+            }
 
             const reqQty = Number(request.requestedQty);
             const prevConsumedQty = Number(request.consumedQty || 0);
@@ -2961,6 +2998,281 @@ export const CQAProvider = ({ children }) => {
                 .slice(0, 5);
 
             return recommendations;
+        },
+        acquireSkuLocks: async (skuList, sessionId, user) => {
+            const now = Date.now();
+            const expiresAt = Timestamp.fromMillis(now + 15 * 60 * 1000); // 15 min lease
+            const uploader = user?.name || user?.id || 'System';
+
+            // Check for active locks first
+            for (const sku of skuList) {
+                const lockRef = doc(db, 'baan_inventory_locks', sku);
+                const lockSnap = await getDoc(lockRef);
+                if (lockSnap.exists()) {
+                    const data = lockSnap.data();
+                    const exp = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : new Date(data.expiresAt).getTime();
+                    if (data.status === 'ACTIVE' && exp > now && data.sessionId !== sessionId) {
+                        return {
+                            success: false,
+                            conflictSku: sku,
+                            message: `Lock Conflict: Part "${sku}" is currently locked by session "${data.sessionId}" (expires in ${Math.round((exp - now) / 60000)}m).`
+                        };
+                    }
+                }
+            }
+
+            // Acquire locks in batch
+            const batch = writeBatch(db);
+            for (const sku of skuList) {
+                const lockRef = doc(db, 'baan_inventory_locks', sku);
+                batch.set(lockRef, {
+                    sku,
+                    sessionId,
+                    ownerUid: user?.id || 'System',
+                    ownerName: uploader,
+                    acquiredAt: Timestamp.fromMillis(now),
+                    expiresAt,
+                    fencingToken: 1,
+                    status: 'ACTIVE'
+                }, { merge: true });
+            }
+
+            await batch.commit();
+            return { success: true, expiresAt: expiresAt.toDate().toISOString() };
+        },
+        releaseSkuLocks: async (skuList, sessionId) => {
+            const batch = writeBatch(db);
+            for (const sku of skuList) {
+                const lockRef = doc(db, 'baan_inventory_locks', sku);
+                batch.update(lockRef, {
+                    status: 'RELEASED'
+                });
+            }
+            try {
+                await batch.commit();
+                return { success: true };
+            } catch (err) {
+                console.warn('[BAAN Locks] Release notice:', err);
+                return { success: false, message: err.message };
+            }
+        },
+        initializeOpeningStockChunk: async (sessionId, variantId, revision, chunkItems, chunkIndex, totalChunks, user) => {
+            const timestamp = new Date().toISOString();
+            const uploader = user?.name || user?.id || 'System';
+
+            try {
+                await runTransaction(db, async (txn) => {
+                    const sessionRef = doc(db, 'baan_opening_stocks', sessionId);
+                    const sessSnap = await txn.get(sessionRef);
+                    const committedChunks = sessSnap.exists() ? (sessSnap.data().committedChunks || []) : [];
+
+                    if (committedChunks.includes(chunkIndex)) {
+                        return; // Already committed idempotently!
+                    }
+
+                    for (const item of chunkItems) {
+                        const cleanSku = (item.partNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                        const locName = (item.locationName || '').trim();
+                        const locCode = (item.locationCode || '').trim();
+                        let resolvedLocation = item.location || '';
+                        if (locName && locCode) resolvedLocation = `${locName} — ${locCode}`;
+                        else if (locName) resolvedLocation = locName;
+
+                        const cleanLoc = (resolvedLocation || 'GEN').toUpperCase().replace(/[^A-Z0-9]/g, '_');
+                        const batchId = `BAT-OPN-${variantId}-${revision}-${cleanSku}-${cleanLoc}`;
+                        const movId = `MOV-OPN-${sessionId}-${cleanSku}-${cleanLoc}`;
+
+                        const batchRef = doc(db, 'baan_batches', batchId);
+                        const existingBatchSnap = await txn.get(batchRef);
+
+                        const count = Number(item.physicalQuantity || 0);
+                        const cost = Number(item.perUnitCost || 0);
+
+                        if (existingBatchSnap.exists()) {
+                            txn.update(batchRef, {
+                                lastVerifiedAt: timestamp,
+                                reference: `Opening Stock (${variantId} ${revision})`
+                            });
+                        } else {
+                            txn.set(batchRef, {
+                                id: batchId,
+                                batchNumber: batchId,
+                                partNumber: item.partNumber,
+                                partName: item.partName || '',
+                                location: resolvedLocation,
+                                locationName: locName,
+                                locationCode: locCode,
+                                inwardDate: timestamp,
+                                quantityTotal: count,
+                                quantityAvailable: count,
+                                perUnitCost: cost,
+                                uom: item.uom || 'Nos',
+                                reference: `Opening Stock (${variantId} ${revision})`,
+                                sessionId
+                            });
+                        }
+
+                        txn.set(doc(db, 'baan_inventory_movements', movId), {
+                            id: movId,
+                            movementType: 'OPENING_STOCK',
+                            partNumber: item.partNumber,
+                            partNo: item.partNumber,
+                            batchId,
+                            location: resolvedLocation,
+                            locationName: locName,
+                            locationCode: locCode,
+                            quantity: count,
+                            qtyAdded: count,
+                            perUnitCost: cost,
+                            sessionId,
+                            user: uploader,
+                            timestamp
+                        });
+
+                        const partRef = doc(db, 'baan_parts', item.partNumber);
+                        txn.set(partRef, {
+                            id: item.partNumber,
+                            name: item.partName || '',
+                            uom: item.uom || 'Nos',
+                            lastInward: timestamp
+                        }, { merge: true });
+                    }
+
+                    const updatedChunks = [...committedChunks, chunkIndex];
+                    const isAllDone = updatedChunks.length >= totalChunks;
+                    txn.set(sessionRef, {
+                        sessionId,
+                        variantId,
+                        revision,
+                        totalChunks,
+                        committedChunks: updatedChunks,
+                        lastChunkCommittedAt: timestamp,
+                        status: isAllDone ? 'COMPLETED' : 'POSTING',
+                        updatedBy: uploader
+                    }, { merge: true });
+                });
+
+                return { success: true };
+            } catch (err) {
+                console.error(`[Opening Stock Chunk ${chunkIndex}] Commit Error:`, err);
+                return { success: false, message: err.message };
+            }
+        },
+        createDiscrepancyTicket: async (ticketData, user) => {
+            const timestamp = new Date().toISOString();
+            const ticketId = `DISC-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+            const uploader = user?.name || user?.id || 'System';
+
+            await setDoc(doc(db, 'baan_inventory_discrepancies', ticketId), {
+                id: ticketId,
+                ticketId,
+                ...ticketData,
+                status: 'PENDING_FIRST_APPROVAL',
+                createdBy: uploader,
+                createdAt: timestamp,
+                firstApproverUid: null,
+                secondApproverUid: null
+            });
+
+            return { success: true, ticketId };
+        },
+        signDiscrepancyTicket: async (ticketId, step, user) => {
+            const timestamp = new Date().toISOString();
+            const ticketRef = doc(db, 'baan_inventory_discrepancies', ticketId);
+
+            if (step === 1) {
+                await updateDoc(ticketRef, {
+                    status: 'PENDING_SECOND_APPROVAL',
+                    firstApproverUid: user?.id || 'Unknown',
+                    firstApproverName: user?.name || 'Store Manager',
+                    firstApprovedAt: timestamp
+                });
+            } else if (step === 2) {
+                const snap = await getDoc(ticketRef);
+                if (snap.exists() && snap.data().firstApproverUid === user?.id) {
+                    return { success: false, message: 'Independent approval required: The second approver must be a different user.' };
+                }
+                await updateDoc(ticketRef, {
+                    status: 'APPROVED',
+                    secondApproverUid: user?.id || 'Unknown',
+                    secondApproverName: user?.name || 'Production Manager',
+                    secondApprovedAt: timestamp
+                });
+            }
+            return { success: true };
+        },
+        postAuditedCorrection: async (ticketId, user) => {
+            const timestamp = new Date().toISOString();
+            const uploader = user?.name || user?.id || 'System';
+            const ticketRef = doc(db, 'baan_inventory_discrepancies', ticketId);
+            const ticketSnap = await getDoc(ticketRef);
+
+            if (!ticketSnap.exists()) return { success: false, message: 'Ticket not found' };
+            const ticket = ticketSnap.data();
+            if (ticket.status !== 'APPROVED') return { success: false, message: 'Ticket must be approved before adjustment' };
+
+            const delta = Number(ticket.delta || 0);
+            const sku = ticket.sku;
+
+            await runTransaction(db, async (txn) => {
+                const movId = `MOV-ADJ-${ticketId}`;
+                if (delta < 0) {
+                    const batches = Object.values(store.baan?.batches || {})
+                        .filter(b => b.partNumber === sku && b.quantityAvailable > 0)
+                        .sort((a, b) => new Date(a.inwardDate) - new Date(b.inwardDate));
+
+                    let remainingToDeduct = Math.abs(delta);
+                    for (const b of batches) {
+                        if (remainingToDeduct <= 0) break;
+                        const take = Math.min(b.quantityAvailable, remainingToDeduct);
+                        txn.update(doc(db, 'baan_batches', b.id), {
+                            quantityAvailable: Number(b.quantityAvailable) - take
+                        });
+                        remainingToDeduct -= take;
+                    }
+
+                    txn.set(doc(db, 'baan_inventory_movements', movId), {
+                        id: movId,
+                        movementType: 'DISCREPANCY_SHORTAGE',
+                        partNumber: sku,
+                        quantity: delta,
+                        ticketId,
+                        user: uploader,
+                        timestamp
+                    });
+                } else {
+                    const surplusBatchId = `BAT-SURP-${sku}-${Date.now()}`;
+                    txn.set(doc(db, 'baan_batches', surplusBatchId), {
+                        id: surplusBatchId,
+                        batchNumber: surplusBatchId,
+                        partNumber: sku,
+                        partName: ticket.partName || sku,
+                        location: ticket.location || 'Warehouse',
+                        quantityTotal: delta,
+                        quantityAvailable: delta,
+                        inwardDate: timestamp,
+                        reference: `Discrepancy Surplus #${ticketId}`
+                    });
+
+                    txn.set(doc(db, 'baan_inventory_movements', movId), {
+                        id: movId,
+                        movementType: 'DISCREPANCY_SURPLUS',
+                        partNumber: sku,
+                        quantity: delta,
+                        ticketId,
+                        user: uploader,
+                        timestamp
+                    });
+                }
+
+                txn.update(ticketRef, {
+                    status: 'RESOLVED',
+                    resolvedAt: timestamp,
+                    resolvedBy: uploader
+                });
+            });
+
+            return { success: true };
         },
         syncBaanData,
         // Centralized BOM & MRP

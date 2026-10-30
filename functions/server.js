@@ -11,6 +11,14 @@ const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 
+// Auto-wire local emulators if not explicitly running against production cloud
+if (!process.env.FIRESTORE_EMULATOR_HOST && process.env.NODE_ENV !== 'production') {
+    process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+}
+if (!process.env.FIREBASE_AUTH_EMULATOR_HOST && process.env.NODE_ENV !== 'production') {
+    process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+}
+
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
