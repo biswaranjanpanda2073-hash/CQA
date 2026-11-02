@@ -1338,7 +1338,7 @@ const BaanManualInward = () => {
                             )}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                        <div className="baan-grid-responsive-2">
                             {/* Rack No/Name */}
                             <div className="baan-input-group">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
@@ -1527,11 +1527,14 @@ const BaanSearchablePartSelect = ({ value, onChange, parts, placeholder = "-- Se
         const spaceBelow = window.innerHeight - rect.bottom;
         const openAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
         
-        const desiredWidth = Math.max(rect.width, 380);
+        const pad = 12;
+        const maxAllowed = Math.min(window.innerWidth - (pad * 2), 480);
+        const desiredWidth = Math.max(rect.width, Math.min(360, maxAllowed));
         let left = rect.left;
-        if (left + desiredWidth > window.innerWidth - 16) {
-            left = Math.max(16, window.innerWidth - desiredWidth - 16);
+        if (left + desiredWidth > window.innerWidth - pad) {
+            left = Math.max(pad, window.innerWidth - desiredWidth - pad);
         }
+        if (left < pad) left = pad;
 
         setCoords({
             top: openAbove ? rect.top : (rect.bottom + 4),
@@ -1892,8 +1895,8 @@ const BaanRequest = () => {
         <div className="animate-fade-in" style={{ width: '100%' }}>
 
             {/* ── Page Header ── */}
-            <div style={{ marginBottom: '1.75rem' }}>
-                <h2 className="baan-title" style={{ fontSize: '1.4rem', marginBottom: '0.3rem' }}>
+            <div className="baan-view-header">
+                <h2 className="baan-title" style={{ fontSize: '1.35rem', marginBottom: '0.25rem' }}>
                     Material Part Request
                 </h2>
                 <p className="baan-subtitle">
@@ -1924,31 +1927,24 @@ const BaanRequest = () => {
             )}
 
             {/* ── Two-column Layout ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem', alignItems: 'start' }}>
+            <div className="baan-request-layout">
 
                 {/* ══ LEFT: Requisition Table ══ */}
                 <form className="baan-card" onSubmit={handleSubmit} style={{ minWidth: 0, overflow: 'visible' }}>
-                    <div className="baan-card-header" style={{ padding: '1rem 1.5rem' }}>
+                    <div className="baan-card-header" style={{ padding: '0.875rem 1.25rem' }}>
                         <div className="baan-card-title" style={{ fontSize: '0.95rem' }}>
                             <Send size={16} style={{ color: 'var(--baan-accent)' }} />
                             Requisition Form
                         </div>
                         <span className="baan-badge neutral">
-                            {selectedCount} of {rows.length} {rows.length === 1 ? 'row' : 'rows'} filled
+                            {selectedCount} of {rows.length} {rows.length === 1 ? 'item' : 'items'} filled
                         </span>
                     </div>
 
-                    <div style={{ padding: '0 1.5rem 1.5rem 1.5rem' }}>
+                    <div className="baan-card-body" style={{ padding: '0.75rem 1rem 1.25rem 1rem' }}>
 
                         {/* Table Header */}
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr 110px 120px 44px',
-                            gap: '1rem',
-                            padding: '0.75rem 0.5rem',
-                            borderBottom: '2px solid var(--baan-border)',
-                            marginBottom: '0.25rem'
-                        }}>
+                        <div className="baan-req-table-header">
                             {[
                                 { label: 'Part Number', req: true },
                                 { label: 'Description', req: false },
@@ -1957,7 +1953,7 @@ const BaanRequest = () => {
                                 { label: '', req: false }
                             ].map((col, i) => (
                                 <div key={i} style={{
-                                    fontSize: '0.73rem', fontWeight: 700,
+                                    fontSize: '0.72rem', fontWeight: 700,
                                     color: 'var(--baan-text-muted)',
                                     textTransform: 'uppercase', letterSpacing: '0.06em'
                                 }}>
@@ -1977,101 +1973,122 @@ const BaanRequest = () => {
                                 return (
                                     <div
                                         key={idx}
+                                        className="baan-req-row"
                                         style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: '1fr 1fr 110px 120px 44px',
-                                            gap: '1rem',
-                                            alignItems: 'center',
-                                            padding: '0.75rem 0.5rem',
-                                            borderRadius: 6,
-                                            background: isEven ? 'transparent' : 'rgba(0,0,0,0.018)',
-                                            borderBottom: '1px solid var(--baan-border)'
+                                            background: isEven ? 'transparent' : 'rgba(0,0,0,0.015)'
                                         }}
                                     >
-                                        {/* Part Number Select */}
-                                        <BaanSearchablePartSelect
-                                            parts={availableParts}
-                                            value={row.partNumber}
-                                            onChange={v => updateRow(idx, 'partNumber', v)}
-                                            placeholder="Search part number..."
-                                        />
-
-                                        {/* Description — read only */}
-                                        <input
-                                            type="text"
-                                            value={meta.partName || ''}
-                                            readOnly
-                                            placeholder="Auto-filled"
-                                            title={meta.partName}
-                                            style={{
-                                                fontSize: '0.84rem',
-                                                background: 'var(--baan-bg-sub, #f5f6f8)',
-                                                color: 'var(--baan-text-muted)',
-                                                cursor: 'default',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap'
-                                            }}
-                                        />
-
-                                        {/* Stock badge */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            {row.partNumber ? (
-                                                <div style={{ textAlign: 'center' }}>
-                                                    <span className={`baan-badge ${hasStock ? 'success' : 'danger'}`}
-                                                        style={{ fontSize: '0.78rem', display: 'block', padding: '0.25rem 0.6rem', fontWeight: 700 }}>
-                                                        {meta.availableStock.toLocaleString()}
-                                                    </span>
-                                                    <div style={{ fontSize: '0.65rem', color: 'var(--baan-text-muted)', marginTop: 2 }}>
-                                                        {hasStock ? 'available' : 'out of stock'}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <span style={{ color: 'var(--baan-text-muted)', fontSize: '1rem' }}>—</span>
+                                        {/* Mobile Header */}
+                                        <div className="baan-req-card-header">
+                                            <span className="baan-req-card-pill">
+                                                <Package size={13} /> Item #{idx + 1}
+                                            </span>
+                                            {rows.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    className="baan-req-card-del-btn"
+                                                    onClick={() => removeRow(idx)}
+                                                >
+                                                    <X size={14} /> Remove
+                                                </button>
                                             )}
                                         </div>
 
-                                        {/* Quantity */}
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max={meta.availableStock || undefined}
-                                            value={row.requiredQty}
-                                            onChange={e => updateRow(idx, 'requiredQty', Math.max(1, parseInt(e.target.value) || 1))}
-                                            style={{
-                                                fontSize: '1rem', fontWeight: 700, textAlign: 'center',
-                                                borderColor: overQty ? 'var(--baan-danger)' : undefined,
-                                                background: overQty ? 'var(--baan-danger-bg)' : undefined,
-                                                color: overQty ? 'var(--baan-danger)' : undefined
-                                            }}
-                                        />
+                                        {/* Part Number Select */}
+                                        <div style={{ minWidth: 0, width: '100%' }}>
+                                            <BaanSearchablePartSelect
+                                                parts={availableParts}
+                                                value={row.partNumber}
+                                                onChange={v => updateRow(idx, 'partNumber', v)}
+                                                placeholder="Search part number..."
+                                            />
+                                        </div>
 
-                                        {/* Remove */}
-                                        <button
-                                            type="button"
-                                            onClick={() => removeRow(idx)}
-                                            title={rows.length === 1 ? 'Clear row' : 'Remove row'}
-                                            style={{
-                                                background: 'none', border: '1.5px solid var(--baan-border)',
-                                                borderRadius: 8, cursor: 'pointer',
-                                                color: 'var(--baan-text-muted)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                height: 38, width: 38, transition: 'all 0.15s',
-                                                flexShrink: 0
-                                            }}
-                                            onMouseEnter={e => {
-                                                e.currentTarget.style.background = 'var(--baan-danger-bg)';
-                                                e.currentTarget.style.borderColor = 'var(--baan-danger)';
-                                                e.currentTarget.style.color = 'var(--baan-danger)';
-                                            }}
-                                            onMouseLeave={e => {
-                                                e.currentTarget.style.background = 'none';
-                                                e.currentTarget.style.borderColor = 'var(--baan-border)';
-                                                e.currentTarget.style.color = 'var(--baan-text-muted)';
-                                            }}
-                                        >
-                                            <X size={15} />
-                                        </button>
+                                        {/* Description — read only */}
+                                        <div style={{ minWidth: 0, width: '100%' }}>
+                                            <input
+                                                type="text"
+                                                value={meta.partName || ''}
+                                                readOnly
+                                                placeholder={row.partNumber ? 'No description available' : 'Auto-filled description'}
+                                                title={meta.partName}
+                                                style={{
+                                                    width: '100%',
+                                                    fontSize: '0.84rem',
+                                                    background: 'var(--baan-surface-muted, #f5f6f8)',
+                                                    color: 'var(--baan-text-secondary)',
+                                                    cursor: 'default',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Controls: Stock Badge & Quantity */}
+                                        <div className="baan-req-mobile-controls">
+                                            {/* Stock badge */}
+                                            <div className="baan-req-control-block" style={{ alignItems: 'center', justifyContent: 'center' }}>
+                                                {row.partNumber ? (
+                                                    <div style={{ textAlign: 'center', width: '100%' }}>
+                                                        <span className={`baan-badge ${hasStock ? 'success' : 'danger'}`}
+                                                            style={{ fontSize: '0.78rem', display: 'inline-flex', padding: '0.3rem 0.65rem', fontWeight: 700, width: '100%', justifyContent: 'center' }}>
+                                                            {meta.availableStock.toLocaleString()} {hasStock ? 'in stock' : 'out'}
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <span style={{ color: 'var(--baan-text-muted)', fontSize: '0.85rem' }}>—</span>
+                                                )}
+                                            </div>
+
+                                            {/* Quantity */}
+                                            <div className="baan-req-control-block">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max={meta.availableStock || undefined}
+                                                    value={row.requiredQty}
+                                                    onChange={e => updateRow(idx, 'requiredQty', Math.max(1, parseInt(e.target.value) || 1))}
+                                                    placeholder="Qty"
+                                                    style={{
+                                                        width: '100%',
+                                                        fontSize: '1rem', fontWeight: 700, textAlign: 'center',
+                                                        borderColor: overQty ? 'var(--baan-danger)' : undefined,
+                                                        background: overQty ? 'var(--baan-danger-bg)' : undefined,
+                                                        color: overQty ? 'var(--baan-danger)' : undefined
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Desktop Remove Button (Column 5) */}
+                                        <div className="baan-req-desktop-remove">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeRow(idx)}
+                                                title={rows.length === 1 ? 'Clear row' : 'Remove row'}
+                                                style={{
+                                                    background: 'none', border: '1.5px solid var(--baan-border)',
+                                                    borderRadius: 8, cursor: 'pointer',
+                                                    color: 'var(--baan-text-muted)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    height: 38, width: 38, transition: 'all 0.15s',
+                                                    flexShrink: 0
+                                                }}
+                                                onMouseEnter={e => {
+                                                    e.currentTarget.style.background = 'var(--baan-danger-bg)';
+                                                    e.currentTarget.style.borderColor = 'var(--baan-danger)';
+                                                    e.currentTarget.style.color = 'var(--baan-danger)';
+                                                }}
+                                                onMouseLeave={e => {
+                                                    e.currentTarget.style.background = 'none';
+                                                    e.currentTarget.style.borderColor = 'var(--baan-border)';
+                                                    e.currentTarget.style.color = 'var(--baan-text-muted)';
+                                                }}
+                                            >
+                                                <X size={15} />
+                                            </button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -2079,7 +2096,8 @@ const BaanRequest = () => {
 
                         {/* ── Add More Row ── */}
                         <div style={{
-                            display: 'flex', alignItems: 'center', gap: '1rem',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            flexWrap: 'wrap', gap: '0.75rem',
                             paddingTop: '1rem', marginTop: '0.5rem',
                             borderTop: '1.5px dashed var(--baan-border)'
                         }}>
@@ -2087,23 +2105,39 @@ const BaanRequest = () => {
                                 type="button"
                                 className="baan-btn secondary"
                                 onClick={addRow}
-                                style={{ height: 42, padding: '0 1.25rem', fontSize: '0.875rem', gap: '0.5rem', flexShrink: 0 }}
+                                style={{ height: 42, padding: '0 1.25rem', fontSize: '0.85rem', gap: '0.5rem' }}
                             >
                                 <PlusCircle size={16} />
                                 Add More Parts
                             </button>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--baan-text-muted)', lineHeight: 1.4 }}>
-                                Add more line items to request multiple parts in a single requisition
+                            <span className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                                Multi-line items permitted in single requisition
                             </span>
                         </div>
 
+                        {/* ── Mobile Responsive Summary Bar ── */}
+                        <div className="baan-req-mobile-summary">
+                            <div className="baan-req-summary-item">
+                                <span className="label">Lines</span>
+                                <span className="value">{selectedCount || '—'}</span>
+                            </div>
+                            <div className="baan-req-summary-item">
+                                <span className="label">Total Units</span>
+                                <span className="value">{totalUnits > 0 ? totalUnits.toLocaleString() : '—'}</span>
+                            </div>
+                            <div className="baan-req-summary-item">
+                                <span className="label">Unique Parts</span>
+                                <span className="value">{uniqueParts || '—'}</span>
+                            </div>
+                        </div>
+
                         {/* ── Submit ── */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--baan-border)' }}>
+                        <div className="baan-req-actions-bar" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--baan-border)' }}>
                             <button
                                 type="submit"
                                 className="baan-btn primary"
                                 disabled={isSubmitting || selectedCount === 0}
-                                style={{ height: 48, padding: '0 2.5rem', fontSize: '0.95rem', gap: '0.5rem' }}
+                                style={{ height: 48, padding: '0 2.25rem', fontSize: '0.95rem', gap: '0.5rem' }}
                             >
                                 {isSubmitting ? (
                                     <><Loader2 className="animate-spin" size={17} /> Submitting...</>
@@ -2120,7 +2154,7 @@ const BaanRequest = () => {
                 </form>
 
                 {/* ══ RIGHT: Summary Panel ══ */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', position: 'sticky', top: '1rem' }}>
+                <div className="baan-request-sidebar">
 
                     {/* Requisition Summary Card */}
                     <div className="baan-card">
