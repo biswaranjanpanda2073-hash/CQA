@@ -472,6 +472,9 @@ export const calculateBomMrp = (bomItems = [], targetBatchSize = 100, baanParts 
  * Downloads a pre-formatted BOM Excel template for offline population.
  */
 export const downloadBomTemplate = (variantName = 'Calculator V5') => {
+    const safeVariantName = (typeof variantName === 'string' && variantName.trim())
+        ? variantName.trim()
+        : 'Calculator V5';
     const templateData = [
         {
             'Item No.': 1,
@@ -523,14 +526,16 @@ export const downloadBomTemplate = (variantName = 'Calculator V5') => {
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'BOM_Template');
-    XLSX.writeFile(wb, `CQA_MES_BOM_Template_${variantName.replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `CQA_MES_BOM_Template_${safeVariantName.replace(/\s+/g, '_')}.xlsx`);
 };
 
 /**
  * Exports the active or selected BOM items to an Excel or CSV file.
  */
 export const exportBomToSpreadsheet = (bomItems = [], variantName = 'Calculator_V5', revision = 'REV-01', format = 'xlsx') => {
-    const exportData = bomItems.map(item => ({
+    const safeVariant = (typeof variantName === 'string' && variantName.trim()) ? variantName.trim() : 'Calculator_V5';
+    const safeRevision = (typeof revision === 'string' && revision.trim()) ? revision.trim() : 'REV-01';
+    const exportData = (bomItems && bomItems.length > 0) ? bomItems.map(item => ({
         'Item No.': item.itemNo,
         'Part Number': item.partNumber,
         'Part Name': item.partName,
@@ -542,13 +547,25 @@ export const exportBomToSpreadsheet = (bomItems = [], variantName = 'Calculator_
         'Station Affinity': (item.stationTags || []).join(', '),
         'Critical Component': item.isCritical ? 'YES' : 'NO',
         'Reference Figures': item.referenceFigures || ''
-    }));
+    })) : [{
+        'Item No.': 1,
+        'Part Number': 'SAMPLE_PN_001',
+        'Part Name': 'Sample Part Name',
+        'Part Description': 'Sample Description (Enter your part description)',
+        'Category / Type': 'Mechanical',
+        'Quantity Required': 1,
+        'Sub Assembly': 'Main Assembly',
+        'UOM': 'Nos',
+        'Station Affinity': 'ASSEMBLY',
+        'Critical Component': 'NO',
+        'Reference Figures': 'Figure 1'
+    }];
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `${variantName}_${revision}`.slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, ws, `${safeVariant}_${safeRevision}`.slice(0, 31));
 
-    const filename = `CQA_BOM_${variantName}_${revision}_${new Date().toISOString().slice(0, 10)}.${format}`;
+    const filename = `CQA_BOM_${safeVariant}_${safeRevision}_${new Date().toISOString().slice(0, 10)}.${format}`;
     XLSX.writeFile(wb, filename, { bookType: format === 'csv' ? 'csv' : 'xlsx' });
 };
 

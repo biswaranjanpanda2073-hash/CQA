@@ -687,7 +687,7 @@ export const BomStudio = ({ user }) => {
 
                         <button
                             className="btn btn-secondary btn-sm"
-                            onClick={downloadBomTemplate}
+                            onClick={() => downloadBomTemplate(activeHeader?.variantName || selectedVariantId || 'Calculator V5')}
                             title="Download standard BOM Excel template"
                         >
                             Template
@@ -913,6 +913,29 @@ export const BomStudio = ({ user }) => {
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                 Supports standard column headers, title rows, and R-BOM specifications.
+                            </div>
+                            <div style={{ marginTop: '0.6rem', fontSize: '0.8rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadBomTemplate(activeHeader?.variantName || selectedVariantId || 'Calculator V5');
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--primary)',
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        padding: '0.2rem 0',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem'
+                                    }}
+                                >
+                                    <Download size={13} /> Download Sample Template (.xlsx)
+                                </button>
                             </div>
                         </div>
 
