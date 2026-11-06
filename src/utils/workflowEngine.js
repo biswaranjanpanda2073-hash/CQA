@@ -42,7 +42,7 @@ export const DEFAULT_ROUTING_MATRICES = {
     },
     'Calculator': {
         1: { passTarget: 2, failTarget: 9, allowedPass: [2], allowedFail: [9], isIntake: true, looperTarget: 3 },
-        2: { passTarget: 4, failTarget: 4, allowedPass: [4], allowedFail: [4, 9] },
+        2: { passTarget: 4, failTarget: 4, allowedPass: [4, 3], allowedFail: [4, 3, 9] },
         3: { passTarget: 6, failTarget: 9, allowedPass: [6], allowedFail: [9] },
         4: { passTarget: 6, failTarget: 5, allowedPass: [6], allowedFail: [5, 9] },
         5: { passTarget: 6, failTarget: 9, allowedPass: [6], allowedFail: [9] },
