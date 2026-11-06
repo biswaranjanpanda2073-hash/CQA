@@ -179,7 +179,7 @@ const CALC_LOOPER_ELIGIBLE_STATIONS = [2, 4, 5, 6, 7, 8, 9];
 
 const CALC_STATION_ALLOWED_TARGETS = {
     1: { Pass: [2, 3] },
-    2: { Pass: [4, 9], Fail: [4, 9] },
+    2: { Pass: [4, 3, 9], Fail: [4, 3, 9] },
     3: { Pass: [4, 5, 6, 7, 9], Fail: [4, 5, 6, 7, 9] },
     4: { Pass: [6, 2], Fail: [5, 9] },
     5: { Pass: [6, 4, 9], Fail: [4, 9] },
