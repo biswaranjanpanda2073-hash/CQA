@@ -34,10 +34,30 @@ export const CheckpointCard = ({
 }) => {
     const formattedNum = String(index).padStart(2, '0');
     const inputRef = useRef(null);
+    const cardRef = useRef(null);
 
-    // Auto-focus input when this checkpoint card becomes active
+    // Auto-focus input and scroll active card into view when active
     useEffect(() => {
         if (isActive) {
+            // Smoothly scroll active card into view if off-screen or near sticky bars
+            if (cardRef.current) {
+                const rect = cardRef.current.getBoundingClientRect();
+                const topBarHeight = 90;
+                const bottomBarHeight = 120;
+                const isInView = (
+                    rect.top >= topBarHeight &&
+                    rect.bottom <= (window.innerHeight - bottomBarHeight)
+                );
+
+                if (!isInView) {
+                    cardRef.current.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest',
+                        inline: 'nearest'
+                    });
+                }
+            }
+
             if (type === 'DATA' || type === 'TEXT') {
                 const timer = setTimeout(() => {
                     inputRef.current?.focus();
@@ -57,6 +77,7 @@ export const CheckpointCard = ({
     if (type === 'TEXT' || fullWidth) {
         return (
             <div 
+                ref={cardRef}
                 className={`checkpoint-card card-full-width ${isActive ? 'active-checkpoint' : ''} ${className}`} 
                 style={style}
                 onClick={onClick}
@@ -90,7 +111,8 @@ export const CheckpointCard = ({
     // ── 2. Numeric / Measurement Data Entry ──
     if (type === 'DATA') {
         return (
-            <div 
+            <div
+                ref={cardRef}
                 className={`checkpoint-card ${isActive ? 'active-checkpoint' : ''} ${className}`} 
                 style={style}
                 onClick={onClick}
@@ -131,7 +153,8 @@ export const CheckpointCard = ({
         const isFail = value === false || value === 'Fail';
 
         return (
-            <div 
+            <div
+                ref={cardRef}
                 className={`checkpoint-card ${isActive ? 'active-checkpoint' : ''} ${className}`} 
                 style={style}
                 onClick={onClick}
@@ -298,8 +321,9 @@ export const CheckpointCard = ({
     const isHold = value === 'Hold';
 
     return (
-        <div 
-            className={`checkpoint-card ${isActive ? 'active-checkpoint' : ''} ${className}`} 
+        <div
+                ref={cardRef}
+                className={`checkpoint-card ${isActive ? 'active-checkpoint' : ''} ${className}`} 
             style={style}
             onClick={onClick}
         >
