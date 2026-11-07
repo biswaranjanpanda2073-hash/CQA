@@ -36,8 +36,8 @@ import * as XLSX from 'xlsx';
 import { useCQA } from '../hooks/useCQA';
 import QRScanner from './QRScanner';
 import ImageCapture from './ImageCapture';
-import { CALCULATOR_UI_STATIONS } from '../utils/calculatorEngine';
-import { getValidDestinationStations } from '../utils/movementEngine';
+import { CALCULATOR_UI_STATIONS, getCalcStationById } from '../utils/calculatorEngine';
+import { getValidDestinationStations, getStationObj } from '../utils/movementEngine';
 import CalculatorStationForm from './CalculatorStationForm';
 import BomInspectorModal from './common/BomInspectorModal';
 import { 
@@ -674,7 +674,10 @@ export const StationExecutionView = ({ stationId, project, user }) => {
         setIsSubmittingMove(true);
         try {
             const targetId = (overrideId || scannedId).trim().toUpperCase().replace(/\//g, '-');
-            const targetStationObj = destinationModal.destinations?.availableStations?.find(s => s.id === Number(targetStationId)) || destinationModal.destinations?.defaultStation;
+            const targetStationObj = destinationModal.destinations?.availableStations?.find(s => s.id === Number(targetStationId))
+                || destinationModal.destinations?.defaultStation
+                || (project === 'Calculator' ? getCalcStationById(Number(targetStationId)) : null)
+                || getStationObj(project, Number(targetStationId));
 
             const result = await processUnit(targetId, {
                 ...data,
@@ -697,6 +700,13 @@ export const StationExecutionView = ({ stationId, project, user }) => {
 
     const handleComplete = async (data, overrideId) => {
         // HOLD result remains at current station — no destination selection required
+        // Direct move if destination station was already explicitly selected in the form (e.g. Station 3 Looper Analysis)
+        const explicitTargetId = data?.targetStationId;
+        if (explicitTargetId) {
+            await executeCompletion(data, Number(explicitTargetId), overrideId);
+            return;
+        }
+
         if (data?.result === 'Hold') {
             await executeCompletion(data, selectedStation.id, overrideId);
             return;

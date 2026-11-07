@@ -240,6 +240,7 @@ export const CalculatorStationForm = ({
 
                 await onComplete({
                     result: calcResult.result,
+                    targetStationId: isRouteToScrap ? 9 : (selectedNextStationId ? Number(selectedNextStationId) : undefined),
                     details: {
                         checkpointResults,
                         dataValues,
@@ -271,6 +272,7 @@ export const CalculatorStationForm = ({
                 const isRouteToScrap = Number(selectedNextStationId) === 9;
                 await onComplete({
                     result: 'Pass',
+                    targetStationId: Number(selectedNextStationId),
                     details: {
                         textValues: {
                             analysis_note: textValues.analysis_note.trim(),
@@ -296,6 +298,7 @@ export const CalculatorStationForm = ({
                 const isRouteToScrap = disposition === 'scrap_analysis';
                 await onComplete({
                     result: reworkResult,
+                    targetStationId: isRouteToScrap ? 9 : undefined,
                     details: {
                         reworkParts: reworkParts.filter(p => p.partNumber && p.partNumber.trim()),
                         textValues: {
@@ -328,6 +331,7 @@ export const CalculatorStationForm = ({
                 const isRouteToScrap = disposition === 'scrap_analysis';
                 await onComplete({
                     result: assemblyResult,
+                    targetStationId: isRouteToScrap ? 9 : undefined,
                     details: {
                         partChanged,
                         assemblyParts: partChanged === 'Yes' ? assemblyParts.filter(p => p.partNumber.trim()) : [],
