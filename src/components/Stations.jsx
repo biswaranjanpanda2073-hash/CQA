@@ -342,8 +342,10 @@ const Stations = ({ user }) => {
                 </div>
                 <StationExecutionView
                     user={user}
+                    project={inAppStation.project}
+                    stationId={parseInt(inAppStation.stationId, 10)}
                     directProject={inAppStation.project}
-                    directStationId={inAppStation.stationId}
+                    directStationId={parseInt(inAppStation.stationId, 10)}
                 />
             </div>
         );
@@ -670,7 +672,9 @@ const Stations = ({ user }) => {
 };
 
 // ─── Standalone View for Terminal Tabs ───
-export const StationExecutionView = ({ stationId, project, user }) => {
+export const StationExecutionView = ({ stationId: propStationId, project: propProject, user, directStationId, directProject }) => {
+    const project = propProject || directProject;
+    const stationId = parseInt(propStationId ?? directStationId, 10);
     const {
         validateScan,
         processUnit,
@@ -705,8 +709,8 @@ export const StationExecutionView = ({ stationId, project, user }) => {
 
     const projectCategory = getProjectCategory(project);
     const isAdvancedEligible = projectCategory === 'Peripherals' || projectCategory === 'Inward QC';
-    const stations = projectCategory === 'Device' ? DEVICE_STATIONS : (projectCategory === 'Peripherals' ? PERIPHERAL_STATIONS : (projectCategory === 'Calculator' ? CALCULATOR_UI_STATIONS : INWARD_QC_STATIONS));
-    const selectedStation = stations.find(s => s.id === stationId);
+    const stations = PROJECT_STATION_MAP[project] || (projectCategory === 'Device' ? DEVICE_STATIONS : (projectCategory === 'Peripherals' ? PERIPHERAL_STATIONS : (projectCategory === 'Calculator' ? CALCULATOR_UI_STATIONS : INWARD_QC_STATIONS)));
+    const selectedStation = stations.find(s => s.id === stationId || String(s.id) === String(stationId));
     const permitted = selectedStation && hasAccess(user, project, selectedStation.name);
 
     // Dynamic Tab Title
