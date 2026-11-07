@@ -222,7 +222,7 @@ const Stations = ({ user }) => {
         setAccessDenied(false);
     };
 
-    // ── Enter handler: open directly in-app ──
+    // ── Enter handler: open station terminal in a dedicated new tab ──
     const handleEnter = () => {
         if (!selectedProject || !selectedStation) return;
         const station = availableStations.find(s => String(s.id) === selectedStation);
@@ -233,7 +233,8 @@ const Stations = ({ user }) => {
             return;
         }
 
-        setInAppStation({ project: selectedProject, stationId: station.id });
+        const url = `${window.location.origin}${window.location.pathname}?project=${encodeURIComponent(selectedProject)}&stationId=${station.id}`;
+        window.open(url, '_blank');
     };
 
     // ── Open in new tab handler ──

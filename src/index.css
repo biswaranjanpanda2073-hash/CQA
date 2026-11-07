@@ -1608,6 +1608,14 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+.block {
+  display: block;
+}
+
+.inline-block {
+  display: inline-block;
+}
+
 .grid {
   display: grid;
 }

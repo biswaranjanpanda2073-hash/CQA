@@ -32,6 +32,8 @@ import { useCQA } from '../../hooks/useCQA';
 import { hasPermission, PERMISSIONS } from '../../utils/rbacEngine';
 import {
     BOM_CATEGORIES,
+    DEFAULT_BOM_VARIANTS,
+    SEED_CALCULATOR_V5_BOM,
     parseBomSpreadsheet,
     calculateBomMrp,
     downloadBomTemplate,
@@ -66,20 +68,26 @@ export const BomStudio = ({ user }) => {
         };
     }, [syncBomData, syncBaanData]);
 
-    // Available Variants
+    // Available Variants (merges Firestore custom variants with default Tohands variants)
     const customHeaders = store.bom?.headers || {};
     const variants = useMemo(() => {
-        return Object.values(customHeaders).map(h => ({
+        const customList = Object.values(customHeaders).map(h => ({
             id: h.variantId || h.id,
             name: h.variantName || h.name || h.variantId,
             category: h.category || 'CALCULATOR',
             defaultActiveRevision: h.activeRevision || 'REV-01',
             description: h.description || ''
         }));
+        if (customList.length > 0) {
+            const existingIds = new Set(customList.map(v => v.id));
+            const missingDefaults = DEFAULT_BOM_VARIANTS.filter(v => !existingIds.has(v.id));
+            return [...customList, ...missingDefaults];
+        }
+        return DEFAULT_BOM_VARIANTS;
     }, [customHeaders]);
 
-    // Active Variant Selection
-    const [selectedVariantId, setSelectedVariantId] = useState('');
+    // Active Variant Selection (defaults to standard CALC_V5)
+    const [selectedVariantId, setSelectedVariantId] = useState('CALC_V5');
 
     useEffect(() => {
         if (!selectedVariantId && variants.length > 0) {
@@ -99,7 +107,20 @@ export const BomStudio = ({ user }) => {
     const variantRevisions = useMemo(() => {
         if (!selectedVariantId) return [];
         const list = Object.values(allRevisions).filter(r => r.variantId === selectedVariantId);
-        return list.sort((a, b) => (b.revision || '').localeCompare(a.revision || ''));
+        if (list.length > 0) {
+            return list.sort((a, b) => (b.revision || '').localeCompare(a.revision || ''));
+        }
+        return [
+            {
+                revision: 'REV-01',
+                variantId: selectedVariantId,
+                changeNotes: 'Initial baseline BOM from Tohands engineering specifications',
+                uploadedBy: 'Tohands Engineering',
+                uploadedAt: new Date('2024-10-05').toISOString(),
+                active: true,
+                itemsCount: selectedVariantId === 'CALC_V5' ? SEED_CALCULATOR_V5_BOM.length : 0
+            }
+        ];
     }, [allRevisions, selectedVariantId]);
 
     // Current viewed revision (defaults to active revision)
@@ -111,14 +132,17 @@ export const BomStudio = ({ user }) => {
         }
     }, [selectedVariantId, activeHeader.activeRevision]);
 
-    // Get items for viewed revision
+    // Get items for viewed revision (with fallback to Tohands V5 seed components)
     const currentRevisionDoc = allRevisions[`${selectedVariantId}_${viewedRevision}`];
     const currentItems = useMemo(() => {
-        if (currentRevisionDoc?.items && Array.isArray(currentRevisionDoc.items)) {
+        if (currentRevisionDoc?.items && Array.isArray(currentRevisionDoc.items) && currentRevisionDoc.items.length > 0) {
             return currentRevisionDoc.items;
         }
+        if (selectedVariantId === 'CALC_V5') {
+            return SEED_CALCULATOR_V5_BOM;
+        }
         return [];
-    }, [currentRevisionDoc]);
+    }, [currentRevisionDoc, selectedVariantId]);
 
     const isCurrentActive = viewedRevision === (activeHeader.activeRevision || 'REV-01');
 
@@ -383,25 +407,26 @@ export const BomStudio = ({ user }) => {
             {/* HEADER CONTROLS STRIP */}
             {/* ═══════════════════════════════════════════════════════════ */}
             <div className="card" style={{ marginBottom: '1.25rem', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    {/* Left: Variant & Revision Switcher */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1.25rem' }}>
+                    {/* Left: Architecture & Revision Pickers */}
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '1.25rem', flexWrap: 'wrap' }}>
                         <div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.25rem' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.35rem' }}>
                                 Product Architecture
-                            </span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <select
                                     className="input-select"
                                     value={selectedVariantId}
                                     onChange={(e) => setSelectedVariantId(e.target.value)}
                                     style={{
                                         fontWeight: 700,
-                                        fontSize: '0.95rem',
-                                        padding: '0.45rem 0.85rem',
-                                        minWidth: 240,
+                                        fontSize: '0.9rem',
+                                        padding: '0.5rem 0.85rem',
+                                        minWidth: 260,
                                         background: 'var(--bg-secondary)',
-                                        borderColor: 'var(--border)'
+                                        borderColor: 'var(--border)',
+                                        borderRadius: 'var(--radius-md)'
                                     }}
                                 >
                                     {variants.map(v => (
@@ -409,21 +434,20 @@ export const BomStudio = ({ user }) => {
                                     ))}
                                 </select>
                                 <button
-                                    className="btn btn-secondary btn-sm"
+                                    className="btn btn-secondary"
                                     onClick={() => setShowAddVariantModal(true)}
-                                    title="Add New Product Variant"
-                                    style={{ padding: '0.45rem 0.65rem' }}
+                                    title="Add New Product Architecture"
+                                    style={{ padding: '0.5rem 0.65rem', height: 38 }}
                                 >
                                     <Plus size={15} />
                                 </button>
                             </div>
                         </div>
 
-                        {/* Revision Switcher */}
                         <div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.25rem' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.35rem' }}>
                                 Revision
-                            </span>
+                            </label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <select
                                     className="input-select"
@@ -431,11 +455,12 @@ export const BomStudio = ({ user }) => {
                                     onChange={(e) => setViewedRevision(e.target.value)}
                                     style={{
                                         fontWeight: 700,
-                                        fontSize: '0.95rem',
-                                        padding: '0.45rem 0.85rem',
-                                        minWidth: 120,
+                                        fontSize: '0.9rem',
+                                        padding: '0.5rem 0.85rem',
+                                        minWidth: 130,
                                         background: 'var(--bg-secondary)',
-                                        borderColor: 'var(--border)'
+                                        borderColor: 'var(--border)',
+                                        borderRadius: 'var(--radius-md)'
                                     }}
                                 >
                                     {variantRevisions.length === 0 && <option value="">No Revisions</option>}
@@ -446,38 +471,37 @@ export const BomStudio = ({ user }) => {
                                     ))}
                                 </select>
 
-                                {/* Active vs Non-Active Status Pill */}
                                 {isCurrentActive ? (
-                                    <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.6rem' }}>
-                                        <CheckCircle2 size={13} /> Active Baseline
+                                    <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', height: 38, fontSize: '0.78rem', fontWeight: 700 }}>
+                                        <CheckCircle2 size={14} /> Active Baseline
                                     </span>
                                 ) : (
                                     <button
-                                        className="btn btn-warning btn-sm"
+                                        className="btn btn-warning"
                                         onClick={() => handleActivateRevision(viewedRevision)}
                                         disabled={!canActivate}
                                         title="Promote this revision to the active production baseline"
-                                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                                        style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', height: 38, fontWeight: 700 }}
                                     >
                                         Set Active
                                     </button>
                                 )}
 
-                                <span className="badge badge-info" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.6rem' }} title="Revisions are locked and immutable once recorded">
-                                    <Lock size={12} /> Frozen
+                                <span className="badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', height: 38, fontSize: '0.78rem', fontWeight: 700 }} title="Revisions are locked and immutable once recorded">
+                                    <Lock size={13} /> Frozen
                                 </span>
                             </div>
                         </div>
                     </div>
 
                     {/* Right Action Buttons */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <button
                             id="btn-bom-history"
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary"
                             onClick={() => setShowHistoryDrawer(true)}
                             title="View revision timeline & changes"
-                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', height: 38, fontSize: '0.82rem', fontWeight: 600 }}
                         >
                             <History size={14} /> History ({variantRevisions.length})
                         </button>
@@ -485,9 +509,9 @@ export const BomStudio = ({ user }) => {
                         {canMrp && (
                             <button
                                 id="btn-mrp-shortage"
-                                className="btn btn-primary btn-sm"
+                                className="btn btn-primary"
                                 onClick={() => setShowMrpModal(true)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', height: 38, fontSize: '0.82rem', fontWeight: 700 }}
                                 title="Run Material Requirements Planning (MRP) analysis against BAAN stock"
                             >
                                 <Boxes size={14} /> MRP Shortage Plan
@@ -497,9 +521,9 @@ export const BomStudio = ({ user }) => {
                         {canUpload && (
                             <button
                                 id="btn-upload-revision"
-                                className="btn btn-secondary btn-sm"
+                                className="btn btn-secondary"
                                 onClick={handleOpenUpload}
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', height: 38, fontSize: '0.82rem', fontWeight: 600 }}
                                 title="Upload new revision from Excel or CSV"
                             >
                                 <Upload size={14} /> Upload Revision
@@ -509,18 +533,18 @@ export const BomStudio = ({ user }) => {
                         {canExport && (
                             <div style={{ display: 'flex', gap: '0.35rem' }}>
                                 <button
-                                    className="btn btn-secondary btn-sm"
+                                    className="btn btn-secondary"
                                     onClick={() => exportBomToSpreadsheet(currentItems, selectedVariantId, viewedRevision, 'xlsx')}
                                     title="Export BOM to Excel"
-                                    style={{ padding: '0.45rem 0.65rem' }}
+                                    style={{ padding: '0 0.75rem', height: 38, fontSize: '0.82rem' }}
                                 >
                                     <FileSpreadsheet size={14} /> Excel
                                 </button>
                                 <button
-                                    className="btn btn-secondary btn-sm"
+                                    className="btn btn-secondary"
                                     onClick={() => exportBomToSpreadsheet(currentItems, selectedVariantId, viewedRevision, 'csv')}
                                     title="Export BOM to CSV"
-                                    style={{ padding: '0.45rem 0.65rem' }}
+                                    style={{ padding: '0 0.75rem', height: 38, fontSize: '0.82rem' }}
                                 >
                                     <Download size={14} /> CSV
                                 </button>

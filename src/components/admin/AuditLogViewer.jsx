@@ -139,17 +139,17 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
 
             {/* Audit Table */}
             <div className="table-to-cards">
-                <div className="table-container table-scroll card">
-                    <table>
+                <div className="table-container table-scroll card" style={{ overflowX: 'auto' }}>
+                    <table style={{ minWidth: '960px', width: '100%' }}>
                         <thead>
                             <tr>
-                                <th>Timestamp</th>
-                                <th>Actor</th>
-                                <th>Action</th>
-                                <th>Entity & ID</th>
-                                <th>Project</th>
-                                <th>Reason & Remarks</th>
-                                <th style={{ textAlign: 'right' }}>Inspection</th>
+                                <th style={{ width: '120px' }}>Timestamp</th>
+                                <th style={{ width: '180px' }}>Actor</th>
+                                <th style={{ width: '140px' }}>Action</th>
+                                <th style={{ width: '160px' }}>Entity & ID</th>
+                                <th style={{ width: '110px' }}>Project</th>
+                                <th style={{ minWidth: '220px' }}>Reason & Remarks</th>
+                                <th style={{ textAlign: 'center', width: '60px' }}>Inspect</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -167,7 +167,7 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
                                                 {(log.actorName || 'A')[0]}
                                             </div>
                                             <div>
-                                                <span className="font-bold text-xs block" style={{ color: 'var(--text-main)' }}>{log.actorName || 'System'}</span>
+                                                <span className="font-bold text-xs" style={{ display: 'block', color: 'var(--text-main)' }}>{log.actorName || 'System'}</span>
                                                 <span className="status-pill neutral" style={{ fontSize: '11px', padding: '1px 6px', marginTop: '2px', display: 'inline-block' }}>{log.actorRole || 'Operator'}</span>
                                             </div>
                                         </div>
@@ -209,12 +209,16 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
                                         <span className="text-xs font-semibold">{log.project || 'Global'}</span>
                                     </td>
                                     <td data-label="Reason">
-                                        <div style={{ maxWidth: 260 }}>
-                                            <span className="text-xs font-bold block truncate">{log.reason || '—'}</span>
-                                            {log.remarks && <span className="text-xs text-muted truncate block">{log.remarks}</span>}
+                                        <div style={{ minWidth: '220px', maxWidth: '340px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <div className="text-xs font-bold truncate" title={log.reason || '—'}>{log.reason || '—'}</div>
+                                            {log.remarks && (
+                                                <div className="text-xs text-muted truncate" title={log.remarks}>
+                                                    {log.remarks}
+                                                </div>
+                                            )}
                                         </div>
                                     </td>
-                                    <td data-label="Inspection" style={{ textAlign: 'right' }}>
+                                    <td data-label="Inspection" style={{ textAlign: 'center', width: '60px' }}>
                                         <button
                                             className="btn-ghost"
                                             style={{ padding: '4px 8px' }}

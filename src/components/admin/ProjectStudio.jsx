@@ -1,4 +1,4 @@
-﻿import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
+import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Layers,
@@ -93,18 +93,22 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
         newCode: ''
     });
 
-    // Real-time Firestore sync
+    // Real-time Firestore sync with robust fallback & initial projects merge
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'projects'), (snap) => {
+            const list = [];
             if (!snap.empty) {
-                const list = [];
                 snap.forEach(d => list.push({ ...d.data(), id: d.id }));
-                list.sort((a, b) => a.name.localeCompare(b.name));
-                setProjects(list);
-            } else {
-                // Fallback to default initial projects
-                setProjects(INITIAL_PROJECTS);
             }
+            // Always ensure baseline projects (Device, Peripherals, Inward QC, Calculator) are available
+            const existingIds = new Set(list.map(p => p.id));
+            INITIAL_PROJECTS.forEach(initP => {
+                if (!existingIds.has(initP.id)) {
+                    list.push(initP);
+                }
+            });
+            list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            setProjects(list);
             setLoading(false);
         }, (err) => {
             console.warn('[ProjectStudio] Falling back to default projects:', err);
@@ -124,8 +128,10 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                 p.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 p.description?.toLowerCase().includes(searchTerm.toLowerCase());
 
-            const matchesStatus = statusFilter === 'ALL' || p.status === statusFilter;
-            const matchesCategory = categoryFilter === 'ALL' || p.category === categoryFilter;
+            const projectStatus = (p.status || 'Active').toLowerCase();
+            const matchesStatus = statusFilter === 'ALL' || projectStatus === statusFilter.toLowerCase();
+            const projectCategory = (p.category || 'Device').toLowerCase();
+            const matchesCategory = categoryFilter === 'ALL' || projectCategory === categoryFilter.toLowerCase();
 
             return matchesSearch && matchesStatus && matchesCategory;
         });
