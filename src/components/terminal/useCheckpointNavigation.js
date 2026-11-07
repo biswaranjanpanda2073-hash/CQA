@@ -29,6 +29,7 @@ export function useCheckpointNavigation({
     onStatusSelect = null,
     onValueSubmit = null,
     isItemValueType = null,
+    onEnterSubmit = null,
     enabled = true
 }) {
     const [activeIndex, setActiveIndex] = useState(0);
@@ -48,6 +49,7 @@ export function useCheckpointNavigation({
         onStatusSelect,
         onValueSubmit,
         isItemValueType,
+        onEnterSubmit,
         enabled
     });
 
@@ -59,6 +61,7 @@ export function useCheckpointNavigation({
             onStatusSelect,
             onValueSubmit,
             isItemValueType,
+        onEnterSubmit,
             enabled
         };
     }, [activeIndex, items, unitId, onStatusSelect, onValueSubmit, isItemValueType, enabled]);
@@ -153,13 +156,21 @@ export function useCheckpointNavigation({
                 ? isItemValueType(activeIndex, currentItem) 
                 : (currentItem?.type === 'DATA');
 
-            // ENTER key outside inputs: prevent default form submission
+            // ENTER key outside inputs
             if (e.key === 'Enter') {
-                e.preventDefault();
                 if (isValue && onValueSubmit) {
+                    e.preventDefault();
                     const valid = onValueSubmit(activeIndex, currentItem);
                     if (valid !== false) {
                         navigateNext();
+                    }
+                    return;
+                }
+                if (stateRef.current.onEnterSubmit) {
+                    const handled = stateRef.current.onEnterSubmit();
+                    if (handled) {
+                        e.preventDefault();
+                        return;
                     }
                 }
                 return;

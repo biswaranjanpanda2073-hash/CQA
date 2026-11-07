@@ -62,7 +62,7 @@ export const CQAProvider = ({ children }) => {
     const [store, setStore] = useState(INITIAL_STORE);
     const [loading, setLoading] = useState(true);
     const [systemNames, setSystemNames] = useState({
-        projects: { 'Device': 'Device', 'Peripherals': 'Peripherals', 'Inward QC': 'Inward QC', 'Calculator': 'Calculator Refurbishment' },
+        projects: { 'Device': 'Refurbishment', 'Peripherals': 'Peripherals', 'Inward QC': 'Inward QC', 'Calculator': 'Calculator Refurbishment' },
         stations: {}
     });
 
@@ -84,7 +84,26 @@ export const CQAProvider = ({ children }) => {
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'settings', 'system_names'), (snapshot) => {
             if (snapshot.exists()) {
-                setSystemNames(snapshot.data());
+                const data = snapshot.data() || {};
+                const rawProjects = data.projects || {};
+                const calcDisplayName = (rawProjects.Calculator && rawProjects.Calculator !== 'Calculator')
+                    ? rawProjects.Calculator
+                    : 'Calculator Refurbishment';
+
+                setSystemNames(prev => ({
+                    projects: {
+                        'Device': 'Refurbishment',
+                        'Peripherals': 'Peripherals',
+                        'Inward QC': 'Inward QC',
+                        ...prev.projects,
+                        ...rawProjects,
+                        Calculator: calcDisplayName
+                    },
+                    stations: {
+                        ...prev.stations,
+                        ...(data.stations || {})
+                    }
+                }));
             }
             setLoading(false);
         }, (error) => {
@@ -132,6 +151,10 @@ export const CQAProvider = ({ children }) => {
 
     const getDisplayName = useCallback((type, id) => {
         if (!id) return id;
+        if (type === 'projects' && (id === 'Calculator' || id === 'Calculator Refurbishment')) {
+            const custom = systemNames.projects?.['Calculator'];
+            return (custom && custom !== 'Calculator') ? custom : 'Calculator Refurbishment';
+        }
         return systemNames[type]?.[id] || id;
     }, [systemNames]);
 
@@ -140,7 +163,7 @@ export const CQAProvider = ({ children }) => {
         if (project === 'Device' || systemNames.projects?.['Device'] === project) return 'Device';
         if (project === 'Peripherals' || systemNames.projects?.['Peripherals'] === project) return 'Peripherals';
         if (project === 'Inward QC' || systemNames.projects?.['Inward QC'] === project) return 'Inward QC';
-        if (project === 'Calculator' || systemNames.projects?.['Calculator'] === project) return 'Calculator';
+        if (project === 'Calculator' || project === 'Calculator Refurbishment' || systemNames.projects?.['Calculator'] === project) return 'Calculator';
         return project;
     }, [systemNames]);
 
@@ -571,6 +594,8 @@ export const CQAProvider = ({ children }) => {
                 const activeP = resolveActiveProject(u);
                 const isRefurb = project === 'Device' || project === 'Refurbishment' || projectDisp === 'Refurbishment';
                 if (isRefurb && (activeP === 'Device' || activeP === 'Refurbishment')) return true;
+                const isCalc = project === 'Calculator' || project === 'Calculator Refurbishment' || projectDisp === 'Calculator Refurbishment';
+                if (isCalc && (activeP === 'Calculator' || activeP === 'Calculator Refurbishment')) return true;
                 return activeP === project || activeP === projectDisp;
             });
 

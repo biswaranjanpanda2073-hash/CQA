@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Check, RefreshCw, AlertTriangle, CheckCircle2, XCircle, PauseCircle } from 'lucide-react';
 import './TerminalUI.css';
 
@@ -24,6 +24,69 @@ export const ProgressActionBar = ({
     style = {}
 }) => {
     const percent = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
+    const submitBtnRef = useRef(null);
+    const resetBtnRef = useRef(null);
+    const prevCanSubmitRef = useRef(false);
+
+    // ── 1. Focus Submit & Complete button when all checkpoints complete and enabled ──
+    useEffect(() => {
+        const canSubmit = !submitDisabled && !isSubmitting && totalCount > 0 && answeredCount === totalCount;
+        if (canSubmit && !prevCanSubmitRef.current) {
+            const timer = setTimeout(() => {
+                if (submitBtnRef.current && !submitBtnRef.current.disabled) {
+                    submitBtnRef.current.focus();
+                }
+            }, 60);
+            return () => clearTimeout(timer);
+        }
+        prevCanSubmitRef.current = canSubmit;
+    }, [submitDisabled, isSubmitting, answeredCount, totalCount]);
+
+    // ── 2. Global Enter key listener to submit when complete & enabled ──
+    useEffect(() => {
+        const handleGlobalEnter = (e) => {
+            if (e.key === 'Enter' && !submitDisabled && !isSubmitting && totalCount > 0 && answeredCount === totalCount) {
+                const target = e.target;
+                const isTextInput = target && (
+                    (target.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit'].includes(target.type)) ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.isContentEditable
+                );
+                if (isTextInput) return;
+                if (target === submitBtnRef.current) return; // Native click handles it
+                if (target === resetBtnRef.current) return; // Enter on reset button triggers reset
+
+                e.preventDefault();
+                if (onSubmit) {
+                    onSubmit();
+                } else if (submitBtnRef.current) {
+                    submitBtnRef.current.click();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalEnter);
+        return () => window.removeEventListener('keydown', handleGlobalEnter);
+    }, [submitDisabled, isSubmitting, answeredCount, totalCount, onSubmit]);
+
+    // ── 3. Tab navigation on Submit button: Tab -> navigate highlight to Reset button ──
+    const handleSubmitKeyDown = (e) => {
+        if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            resetBtnRef.current?.focus();
+        }
+    };
+
+    // ── 4. Tab navigation on Reset button: Tab -> navigate highlight back to Submit button ──
+    const handleResetKeyDown = (e) => {
+        if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            submitBtnRef.current?.focus();
+        } else if (e.key === 'Tab' && e.shiftKey) {
+            e.preventDefault();
+            submitBtnRef.current?.focus();
+        }
+    };
 
     const renderStatusBadge = () => {
         if (!overallResult || overallResult === 'Incomplete') {
@@ -94,9 +157,11 @@ export const ProgressActionBar = ({
                     {extraActions}
 
                     <button
+                        ref={resetBtnRef}
                         type="button"
                         className="btn btn-secondary terminal-reset-btn"
                         onClick={onReset}
+                        onKeyDown={handleResetKeyDown}
                         disabled={isSubmitting}
                         title="Reset terminal inputs"
                     >
@@ -105,9 +170,11 @@ export const ProgressActionBar = ({
                     </button>
 
                     <button
+                        ref={submitBtnRef}
                         type={onSubmit ? 'button' : 'submit'}
                         className="btn btn-primary terminal-submit-btn"
                         onClick={onSubmit}
+                        onKeyDown={handleSubmitKeyDown}
                         disabled={submitDisabled || isSubmitting}
                         title={submitText}
                     >

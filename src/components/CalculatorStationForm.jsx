@@ -207,7 +207,17 @@ export const CalculatorStationForm = ({
             }
             return true;
         },
-        isItemValueType: (index, cp) => cp?.type === 'DATA'
+        isItemValueType: (index, cp) => cp?.type === 'DATA',
+        onEnterSubmit: () => {
+            if (calcResult.complete && !isSubmitting) {
+                if (calcResult.result === 'Fail' && !textValues.failureReason) return false;
+                if (calcResult.result === 'Hold' && !textValues.holdReason) return false;
+                if ([7, 8].includes(station.id) && calcResult.result === 'Fail' && !selectedNextStationId) return false;
+                handleSubmit();
+                return true;
+            }
+            return false;
+        }
     });
 
     // ─── FORM SUBMISSION ───
@@ -618,7 +628,7 @@ export const CalculatorStationForm = ({
                             </div>
                             <button
                                 type="button"
-                                className="btn btn-primary"
+                                className="btn btn-primary terminal-submit-btn"
                                 style={{ width: '100%', height: 44, fontSize: '0.875rem' }}
                                 onClick={handleReturnToPrevious}
                                 disabled={isSubmittingScrap || !returnReason.trim() || !returnRemarks.trim()}
@@ -744,7 +754,7 @@ export const CalculatorStationForm = ({
                                 <label style={{ fontWeight: 700, margin: 0 }}>Components / Parts Replaced</label>
                                 <button
                                     type="button"
-                                    className="btn btn-secondary"
+                                    className="btn btn-secondary terminal-reset-btn"
                                     style={{ height: 32, fontSize: '0.75rem', padding: '0 0.75rem' }}
                                     onClick={() => setReworkParts([...reworkParts, { partNumber: '', partName: '', quantity: 1 }])}
                                 >
@@ -1024,7 +1034,7 @@ export const CalculatorStationForm = ({
                                     ))}
                                     <button
                                         type="button"
-                                        className="btn btn-secondary"
+                                        className="btn btn-secondary terminal-reset-btn"
                                         style={{ height: 32, fontSize: '0.75rem', padding: '0 0.75rem', marginTop: '0.5rem' }}
                                         onClick={() => setAssemblyParts([...assemblyParts, { partNumber: '', partName: '', quantity: 1, reason: '' }])}
                                     >
@@ -1277,7 +1287,7 @@ export const CalculatorStationForm = ({
                     <div style={{ display: 'flex', gap: '0.75rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-light)', marginTop: '1rem' }}>
                         <button
                             type="submit"
-                            className="btn btn-primary"
+                            className="btn btn-primary terminal-submit-btn"
                             style={{ flex: 2, height: 50, fontSize: '0.95rem' }}
                             disabled={isSubmitting}
                         >
@@ -1285,7 +1295,7 @@ export const CalculatorStationForm = ({
                         </button>
                         <button
                             type="button"
-                            className="btn btn-secondary"
+                            className="btn btn-secondary terminal-reset-btn"
                             style={{ flex: 1, height: 50 }}
                             onClick={onReset}
                             disabled={isSubmitting}
