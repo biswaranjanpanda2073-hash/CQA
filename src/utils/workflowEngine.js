@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Visual Workflow Studio & Routing Matrix Engine
  * Pure business logic for workflow sequencing, graph validation,
  * deterministic and dynamic routing resolution, and draft/publish lifecycle.

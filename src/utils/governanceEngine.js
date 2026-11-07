@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Serial & Production Governance Engine
  * Pure business logic for Serial Inspection, Hold/Unhold Taxonomy,
  * Looper Risk Analysis, and Disposition Workflows.
@@ -235,7 +235,7 @@ export const formatHistoryEvent = (entry, index) => {
 
     const result = String(entry.result || entry.status || 'UNKNOWN').toUpperCase();
     const stationName = entry.station || entry.toStationName || entry.stationName || `Station ${entry.stationId || '?'}`;
-    const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'N/A';
+    const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString('en-IN') : 'N/A';
     const operator = entry.operator || entry.operatorName || entry.operatorId || 'MES System';
 
     let eventType = 'STEP';

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Safe Dual-Read Configuration Reader Engine
  * 
  * Provides unified, safe access to project workflows, station definitions,

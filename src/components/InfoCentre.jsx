@@ -122,7 +122,7 @@ const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLa
     });
 
     return (
-        <div className="progression-track" style={{ gap: hideLabels ? '0.5rem' : '1rem' }}>
+        <div className="progression-track" style={{ gap: hideLabels ? '0.5rem' : '1rem', paddingRight: '1.5rem' }}>
             {flow.map((stage, i) => {
                 const isSkipped = skippedStages.has(i) && !completedStages.has(i);
                 const isCompleted = completedStages.has(i);
@@ -130,7 +130,7 @@ const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLa
 
                 return (
                     <React.Fragment key={i}>
-                        <div className="progression-step" style={{ minWidth: hideLabels ? 'auto' : '80px' }} title={isSkipped ? 'SKIPPED BY ADMIN OVERRIDE' : undefined}>
+                        <div className="progression-step" style={{ minWidth: hideLabels ? 'auto' : '84px' }} title={isSkipped ? 'SKIPPED BY ADMIN OVERRIDE' : undefined}>
                             <div 
                                 className={`progression-dot ${isSkipped ? 'skipped' : isCompleted ? (isCurrent ? 'current' : 'completed') : ''}`}
                                 style={{
@@ -159,7 +159,7 @@ const StageProgressionTracker = ({ history = [], project, getDisplayName, hideLa
                             <div 
                                 className={`progression-connector ${isCompleted && !isCurrent ? 'completed' : isSkipped ? 'skipped' : ''}`}
                                 style={{
-                                    margin: hideLabels ? '0 -4px' : '0 4px',
+                                    margin: hideLabels ? '11px -4px 0 -4px' : '13px 4px 0 4px',
                                     ...(isSkipped ? { borderTop: '2px dashed var(--warning)', background: 'transparent' } : {})
                                 }}
                             />
@@ -1032,7 +1032,7 @@ const InfoCentre = ({ user, onNavigateToConfig }) => {
 
                     {activeTab === 'movement' && (
                         <div className="table-to-cards">
-                            <div className="table-container card">
+                            <div className="table-container table-scroll card">
                                 <table>
                                     <thead>
                                         <tr>

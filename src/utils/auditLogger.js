@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Immutable Administrative Audit Logger
  * Records all configuration, master data, user, and device governance events
  * into the Firestore 'audit_logs' collection.

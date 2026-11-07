@@ -1,4 +1,4 @@
-import { Chart, registerables } from 'chart.js';
+﻿import { Chart, registerables } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 Chart.register(...registerables);

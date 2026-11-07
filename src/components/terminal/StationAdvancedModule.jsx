@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useRef } from 'react';
 import {
     CheckCircle2,
@@ -321,17 +322,17 @@ export const StationAdvancedModule = ({
     };
 
     // Safe back navigation warning if unsubmitted work exists
-    const handleSafeNavigateBack = () => {
+    const handleSafeNavigateBack = async () => {
         if (activeSubView === 'approved_fg') {
             if (fgScannedList.length > 0 && !fgProcessResult) {
-                if (!window.confirm('You have unsubmitted serial numbers. Are you sure you want to leave this workflow?')) {
+                if (!await showConfirm('You have unsubmitted serial numbers. Are you sure you want to leave this workflow?')) {
                     return;
                 }
             }
             setActiveSubView('menu');
         } else if (activeSubView === 'commit_rejection') {
             if (rejActiveUnit && !rejProcessResult) {
-                if (!window.confirm('You have an active defective serial number. Are you sure you want to leave this workflow?')) {
+                if (!await showConfirm('You have an active defective serial number. Are you sure you want to leave this workflow?')) {
                     return;
                 }
             }

@@ -221,15 +221,15 @@ const StationOutputChart = ({ data }) => {
                 tension: 0.4,
                 pointBackgroundColor: '#28a745',
                 fill: false,
-                datalabels: { align: 'top', offset: 8, color: '#28a745', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString() }
+                datalabels: { align: 'top', offset: 8, color: '#28a745', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString('en-IN') }
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, grid: { color: '#F0F0F0' }, ticks: { color: '#6c757d', font: { size: 11 } } },
-                x: { grid: { display: false }, ticks: { color: '#6c757d', font: { size: 11 } } }
+                y: { beginAtZero: true, grid: { color: 'var(--border-light)' }, ticks: { color: 'var(--text-muted)', precision: 0, stepSize: 1, font: { size: 12 } } },
+                x: { grid: { display: false }, ticks: { color: 'var(--text-muted)', font: { size: 12 } } }
             }
         }
     };
@@ -249,15 +249,15 @@ const StationQueueChart = ({ data }) => {
                 tension: 0.4,
                 pointBackgroundColor: '#fd7e14',
                 fill: false,
-                datalabels: { align: 'top', offset: 8, color: '#fd7e14', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString() }
+                datalabels: { align: 'top', offset: 8, color: '#fd7e14', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString('en-IN') }
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, grid: { color: '#F0F0F0' }, ticks: { color: '#6c757d', font: { size: 11 } } },
-                x: { grid: { display: false }, ticks: { color: '#6c757d', font: { size: 11 } } }
+                y: { beginAtZero: true, grid: { color: 'var(--border-light)' }, ticks: { color: 'var(--text-muted)', precision: 0, stepSize: 1, font: { size: 12 } } },
+                x: { grid: { display: false }, ticks: { color: 'var(--text-muted)', font: { size: 12 } } }
             }
         }
     };
@@ -277,7 +277,7 @@ const FPYTrendChart = ({ data }) => {
                 tension: 0.4,
                 pointBackgroundColor: '#17a2b8',
                 fill: false,
-                datalabels: { align: 'top', offset: 8, color: '#17a2b8', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString() + '%' }
+                datalabels: { align: 'top', offset: 8, color: '#17a2b8', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString('en-IN') + '%' }
             }]
         },
         options: {
@@ -305,15 +305,15 @@ const RejectionTrendChart = ({ data }) => {
                 tension: 0.4,
                 pointBackgroundColor: '#dc3545',
                 fill: false,
-                datalabels: { align: 'top', offset: 8, color: '#dc3545', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString() }
+                datalabels: { align: 'top', offset: 8, color: '#dc3545', font: { weight: 'bold', size: 11 }, textStrokeColor: '#ffffff', textStrokeWidth: 4, formatter: (v) => Number(v).toLocaleString('en-IN') }
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, grid: { color: '#F0F0F0' }, ticks: { color: '#6c757d', font: { size: 11 } } },
-                x: { grid: { display: false }, ticks: { color: '#6c757d', font: { size: 11 } } }
+                y: { beginAtZero: true, grid: { color: 'var(--border-light)' }, ticks: { color: 'var(--text-muted)', precision: 0, stepSize: 1, font: { size: 12 } } },
+                x: { grid: { display: false }, ticks: { color: 'var(--text-muted)', font: { size: 12 } } }
             }
         }
     };
@@ -367,11 +367,11 @@ const WorkflowChart = ({ data }) => {
                 x: {
                     beginAtZero: true,
                     grid: { display: false },
-                    ticks: { color: '#6c757d', font: { size: 11 } }
+                    ticks: { color: 'var(--text-muted)', precision: 0, stepSize: 1, font: { size: 12 } }
                 },
                 y: {
-                    grid: { color: '#F5F5F5' },
-                    ticks: { color: '#333', font: { size: 11 } }
+                    grid: { color: 'var(--border-light)' },
+                    ticks: { color: 'var(--text-main)', font: { size: 12 } }
                 }
             },
             animation: { duration: 400 }
@@ -414,7 +414,7 @@ const DashboardInner = ({ toggleSidebar }) => {
     const [filterLocation, setFilterLocation] = useState('all');
     const [filterOperator, setFilterOperator] = useState('all');
     const [filterShift, setFilterShift] = useState('all');
-    const [currentTime, setCurrentTime] = React.useState(new Date().toLocaleTimeString());
+    const [currentTime, setCurrentTime] = React.useState(new Date().toLocaleTimeString('en-IN'));
     const [loadedDevices, setLoadedDevices] = useState([]);
     const [isLoadingData, setIsLoadingData] = useState(true);   // blocks UI only on first load
     const [isRefreshing, setIsRefreshing] = useState(false);    // subtle banner on project switch
@@ -505,7 +505,7 @@ const DashboardInner = ({ toggleSidebar }) => {
     }, [project, projectDisp, resolveActiveProject]);
 
     React.useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+        const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString('en-IN')), 1000);
         return () => clearInterval(timer);
     }, []);
 
@@ -1068,23 +1068,27 @@ const DashboardInner = ({ toggleSidebar }) => {
             color: '#333'
         }}>
             {/* Header / Meta Bar */}
-            <div style={{ 
-                background: '#FFF', 
-                padding: '12px 24px', 
+            <div className="dashboard-meta-bar" style={{ 
+                background: 'var(--bg-card)', 
+                padding: '10px 16px', 
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 alignItems: 'center',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-                borderBottom: '1px solid #E0E0E0'
+                flexWrap: 'wrap',
+                gap: '8px 16px',
+                boxShadow: 'var(--shadow-sm)',
+                borderBottom: '1px solid var(--border)',
+                minWidth: 0
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button className="nav-trigger show-mobile-only" onClick={toggleSidebar} aria-label="Toggle Menu" style={{ padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#333', display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flexWrap: 'wrap' }}>
+                    <button className="nav-trigger drawer-trigger" onClick={toggleSidebar} aria-label="Toggle Menu" style={{ padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-main)', display: 'flex', alignItems: 'center' }}>
                         <Menu size={20} />
                     </button>
-                    <div className="hide-mobile" style={{ background: '#1B5E20', color: '#FFF', padding: '6px 12px', borderRadius: '4px', fontWeight: 800, fontSize: '14px' }}>CQA MES</div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#555' }}>Production Dashboard — {projectDisp}</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        Production Dashboard — {projectDisp}
+                    </div>
                 </div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#888', display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{
                             display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
@@ -1092,11 +1096,10 @@ const DashboardInner = ({ toggleSidebar }) => {
                             boxShadow: '0 0 0 2px rgba(40,167,69,0.3)',
                             animation: 'pulse 2s infinite'
                         }} />
-                        <span style={{ color: '#28a745' }}>LIVE</span>
-                        {lastRefreshed && <span style={{ color: '#aaa', fontWeight: 500 }}>· {lastRefreshed.toLocaleTimeString()}</span>}
+                        <span style={{ color: '#28a745', fontWeight: 700 }}>LIVE</span>
+                        {lastRefreshed && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {lastRefreshed.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
                     </div>
-                    <div>Shift: <span style={{color: '#1B5E20'}}>{metrics.activeShift}</span></div>
-                    <div>Filters: <span style={{color: '#1B5E20'}}>{filterProduct === 'all' ? 'All Products' : filterProduct} | {filterShift === 'all' ? 'All Shifts' : filterShift}</span></div>
+                    <div>Shift: <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{metrics.activeShift}</span></div>
                 </div>
             </div>
 

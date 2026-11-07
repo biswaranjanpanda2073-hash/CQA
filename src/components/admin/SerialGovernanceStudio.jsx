@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
     Search,
     Scan,
@@ -771,7 +771,7 @@ export const SerialGovernanceStudio = ({ user, initialSerial, onNavigateToInfo }
                                             <div>
                                                 <span className="font-semibold text-muted uppercase">Last Activity: </span>
                                                 <strong style={{ color: 'var(--text-main)' }}>
-                                                    {searchedUnit.updatedAt ? new Date(searchedUnit.updatedAt).toLocaleString() : 'N/A'}
+                                                    {searchedUnit.updatedAt ? new Date(searchedUnit.updatedAt).toLocaleString('en-IN') : 'N/A'}
                                                 </strong>
                                             </div>
                                         </div>
@@ -851,7 +851,7 @@ export const SerialGovernanceStudio = ({ user, initialSerial, onNavigateToInfo }
                                             <div><strong>Reason:</strong> {searchedUnit.holdReason || 'Administrative Hold'}</div>
                                             {searchedUnit.holdRemarks && <div><strong>Notes:</strong> {searchedUnit.holdRemarks}</div>}
                                             <div className="text-muted" style={{ marginTop: '0.3rem', fontSize: '11px' }}>
-                                                Held by <strong>{searchedUnit.holdUserId || 'Administrator'}</strong> at <strong>{searchedUnit.holdStation || searchedUnit.stationName}</strong> on {searchedUnit.holdTimestamp ? new Date(searchedUnit.holdTimestamp).toLocaleString() : 'N/A'}
+                                                Held by <strong>{searchedUnit.holdUserId || 'Administrator'}</strong> at <strong>{searchedUnit.holdStation || searchedUnit.stationName}</strong> on {searchedUnit.holdTimestamp ? new Date(searchedUnit.holdTimestamp).toLocaleString('en-IN') : 'N/A'}
                                             </div>
                                         </div>
                                     </div>
@@ -1116,7 +1116,7 @@ export const SerialGovernanceStudio = ({ user, initialSerial, onNavigateToInfo }
                                                 </td>
 
                                                 <td style={{ padding: '0.75rem 1rem', fontSize: '12px', color: 'var(--text-muted)' }}>
-                                                    {unit.holdTimestamp ? new Date(unit.holdTimestamp).toLocaleString() : 'N/A'}
+                                                    {unit.holdTimestamp ? new Date(unit.holdTimestamp).toLocaleString('en-IN') : 'N/A'}
                                                 </td>
 
                                                 <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>

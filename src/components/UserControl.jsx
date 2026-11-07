@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState } from 'react';
 import {
     User,
@@ -17,10 +18,10 @@ const UserControl = ({ user }) => {
 
     const roleColor = user?.role === 'Admin' ? 'admin' : user?.role === 'Supervisor' ? 'supervisor' : 'operator';
 
-    const handleResetPassword = () => {
-        if (window.confirm('Submit a password reset request?')) {
+    const handleResetPassword = async () => {
+        if (await showConfirm('Submit a password reset request?')) {
             requestPasswordReset(user.id);
-            alert('Reset request submitted. Admin will process it.');
+            showAlert('Reset request submitted. Admin will process it.');
         }
     };
 
@@ -35,7 +36,7 @@ const UserControl = ({ user }) => {
             link.download = `AuditLog-${user.id}.csv`;
             link.click();
         } else {
-            alert('No audit logs available for your account.');
+            showAlert('No audit logs available for your account.');
         }
     };
 
@@ -91,7 +92,7 @@ const UserControl = ({ user }) => {
                     setConfirmPassword('');
                     setTimeout(() => setShowChangePw(false), 2000);
                 } else {
-                    alert('Password changed successfully! Please log in with your new password.');
+                    showAlert('Password changed successfully! Please log in with your new password.');
                     await signOut(auth);
                 }
             } else {
@@ -146,7 +147,7 @@ const UserControl = ({ user }) => {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
                                 <span className="text-xs font-bold uppercase text-muted">Session</span>
-                                <span className="text-xs text-mono font-semibold text-muted">{new Date().toLocaleDateString()}</span>
+                                <span className="text-xs text-mono font-semibold text-muted">{new Date().toLocaleDateString('en-IN')}</span>
                             </div>
                         </div>
                     </div>

@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import {
     db, storage, auth, functions, devicesCol, doc, setDoc, updateDoc, getDoc, getDocs, onSnapshot, deleteDoc, writeBatch, runTransaction, Timestamp, collection, addDoc, query, where, orderBy,
@@ -401,7 +402,7 @@ export const CQAProvider = ({ children }) => {
                     if (stationId === 1) {
                         if (freshUnit) {
                             if (freshUnit.status === 'Processing') {
-                                alert(`Unit "${cleanId}" is locked at ${freshUnit.stationName || 'current station'}.`);
+                                showAlert(`Unit "${cleanId}" is locked at ${freshUnit.stationName || 'current station'}.`);
                                 return false;
                             }
                             if (['Completed', 'SCRAPPED', 'Scrap', 'Reject'].includes(freshUnit.status)) {
@@ -491,7 +492,7 @@ export const CQAProvider = ({ children }) => {
                     return true;
                 } catch (localErr) {
                     console.error("Local calculator processor error:", localErr);
-                    alert(`Calculator Station Error: ${localErr.message || "Processing failed"}`);
+                    showAlert(`Calculator Station Error: ${localErr.message || "Processing failed"}`);
                     return false;
                 }
             }
@@ -1605,7 +1606,7 @@ export const CQAProvider = ({ children }) => {
         if (!movSnap.exists()) throw new Error(`Movement transaction "${movementId}" was not found.`);
 
         const movData = movSnap.data();
-        if (movData.reversedAt) throw new Error(`Movement ${movementId} was already reversed on ${new Date(movData.reversedAt).toLocaleString()}.`);
+        if (movData.reversedAt) throw new Error(`Movement ${movementId} was already reversed on ${new Date(movData.reversedAt).toLocaleString('en-IN')}.`);
 
         const timestamp = new Date().toISOString();
         const dateStr = timestamp.slice(0, 10).replace(/-/g, '');

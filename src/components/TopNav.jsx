@@ -47,13 +47,21 @@ const TopNav = ({ theme, toggleTheme, activeSection, user, onSectionChange, togg
 
     const sectionLabels = {
         dashboard: 'Dashboard',
-        operation: 'Operation',
+        operation: 'Operation Terminals',
         info: 'Info Centre',
-        profile: 'Profile',
-        users: 'User Control',
+        baan: 'BAAN Inventory',
+        admin: 'Admin Console',
+        'bom-studio': 'BOM Studio',
+        'bom-master': 'BOM Master',
+        rbac: 'Role & Access (RBAC)',
+        users: 'User Governance',
+        'unit-config': 'Serial Configuration',
+        audit: 'Compliance & Audit',
         maintenance: 'Maintenance',
-        'unit-config': 'Unit/Serial Configuration'
+        profile: 'User Profile'
     };
+
+    const activeTitle = sectionLabels[activeSection] || (activeSection ? activeSection.replace(/-/g, ' ').toUpperCase() : 'Overview');
 
     const formatTime = (d) => d.toLocaleTimeString('en-IN', {
         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
@@ -84,7 +92,7 @@ const TopNav = ({ theme, toggleTheme, activeSection, user, onSectionChange, togg
                         color: 'var(--primary)',
                         letterSpacing: '0.04em'
                     }}>
-                        {sectionLabels[activeSection] || 'Dashboard'}
+                        {activeTitle}
                     </span>
                 </div>
 

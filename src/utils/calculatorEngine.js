@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Calculator Refurbishment Engine
  * 
  * All Calculator-specific business logic: stations, checkpoints, routing rules,

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+﻿import React, { useRef, useEffect } from 'react';
 import { Check, RefreshCw, AlertTriangle, CheckCircle2, XCircle, PauseCircle } from 'lucide-react';
 import './TerminalUI.css';
 

@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
     Check,
@@ -229,19 +230,19 @@ export const CalculatorStationForm = ({
             if ([2, 4, 7, 8].includes(station.id)) {
                 const validation = validateCalcStationData(station.id, checkpointResults, dataValues, textValues);
                 if (!validation.valid) {
-                    alert("Validation Check Failed:\n\n• " + validation.errors.join("\n• "));
+                    showAlert("Validation Check Failed:\n\n• " + validation.errors.join("\n• "));
                     return;
                 }
 
                 if (!calcResult.result) {
-                    alert("Please complete all checkpoints with Pass, Fail, or Hold.");
+                    showAlert("Please complete all checkpoints with Pass, Fail, or Hold.");
                     return;
                 }
 
                 // If Fail and Station 7 or 8 (dynamic selection required)
                 if (calcResult.result === 'Fail' && [7, 8].includes(station.id)) {
                     if (!selectedNextStationId) {
-                        alert("Please select the Next Station for this failed unit.");
+                        showAlert("Please select the Next Station for this failed unit.");
                         return;
                     }
                 }
@@ -272,11 +273,11 @@ export const CalculatorStationForm = ({
             // Station 3: Looper Analysis
             if (station.id === 3) {
                 if (!textValues.analysis_note?.trim()) {
-                    alert("Analysis Note is mandatory for Looper Analysis.");
+                    showAlert("Analysis Note is mandatory for Looper Analysis.");
                     return;
                 }
                 if (!selectedNextStationId) {
-                    alert("Please select the Next Station from the eligible list.");
+                    showAlert("Please select the Next Station from the eligible list.");
                     return;
                 }
                 const isRouteToScrap = Number(selectedNextStationId) === 9;
@@ -298,11 +299,11 @@ export const CalculatorStationForm = ({
             // Station 5: Hardware Rework
             if (station.id === 5) {
                 if (!reworkResult) {
-                    alert("Please select Operational Result (Pass or Fail).");
+                    showAlert("Please select Operational Result (Pass or Fail).");
                     return;
                 }
                 if (!textValues.rework_note?.trim()) {
-                    alert("Rework Note is mandatory.");
+                    showAlert("Rework Note is mandatory.");
                     return;
                 }
                 const isRouteToScrap = disposition === 'scrap_analysis';
@@ -327,15 +328,15 @@ export const CalculatorStationForm = ({
             // Station 6: Assembly
             if (station.id === 6) {
                 if (!assemblyResult) {
-                    alert("Please select Operational Result (Pass or Fail).");
+                    showAlert("Please select Operational Result (Pass or Fail).");
                     return;
                 }
                 if (!textValues.assembly_note?.trim()) {
-                    alert("Assembly Note is mandatory.");
+                    showAlert("Assembly Note is mandatory.");
                     return;
                 }
                 if (partChanged === 'Yes' && assemblyParts.some(p => !p.partNumber.trim())) {
-                    alert("Please specify the Part Number for each replaced part, or remove unused rows.");
+                    showAlert("Please specify the Part Number for each replaced part, or remove unused rows.");
                     return;
                 }
                 const isRouteToScrap = disposition === 'scrap_analysis';
@@ -359,7 +360,7 @@ export const CalculatorStationForm = ({
             }
         } catch (err) {
             console.error("Submission error:", err);
-            alert(err.message || 'Submission error');
+            showAlert(err.message || 'Submission error');
         } finally {
             setIsSubmitting(false);
         }
@@ -368,14 +369,14 @@ export const CalculatorStationForm = ({
     // ─── SCRAP APPROVAL HANDLER ───
     const handleApproveScrap = async () => {
         if (!scrapReason.trim()) {
-            alert("Please select or enter a Scrap Reason.");
+            showAlert("Please select or enter a Scrap Reason.");
             return;
         }
         if (!scrapRemarks.trim()) {
-            alert("Scrap Remarks are required.");
+            showAlert("Scrap Remarks are required.");
             return;
         }
-        if (!window.confirm(`CONFIRM SCRAP:\n\nAre you sure you want to permanently SCRAP unit "${unitId}"?\nThis action sets the unit status to SCRAPPED and locks it.`)) {
+        if (!await showConfirm(`CONFIRM SCRAP:\n\nAre you sure you want to permanently SCRAP unit "${unitId}"?\nThis action sets the unit status to SCRAPPED and locks it.`)) {
             return;
         }
         setIsSubmittingScrap(true);
@@ -387,13 +388,13 @@ export const CalculatorStationForm = ({
                 scrapRemarks: scrapRemarks.trim()
             });
             if (res.success) {
-                alert(`Transaction Complete:\nUnit "${unitId}" has been marked as SCRAPPED.`);
+                showAlert(`Transaction Complete:\nUnit "${unitId}" has been marked as SCRAPPED.`);
                 onReset();
             } else {
-                alert(`Scrap Approval Error: ${res.message || 'Operation failed.'}`);
+                showAlert(`Scrap Approval Error: ${res.message || 'Operation failed.'}`);
             }
         } catch (err) {
-            alert(`Execution Error: ${err.message}`);
+            showAlert(`Execution Error: ${err.message}`);
         } finally {
             setIsSubmittingScrap(false);
         }
@@ -402,17 +403,17 @@ export const CalculatorStationForm = ({
     // ─── SCRAP RETURN HANDLER ───
     const handleReturnToPrevious = async () => {
         if (!returnReason.trim()) {
-            alert("Return Reason is required.");
+            showAlert("Return Reason is required.");
             return;
         }
         if (!returnRemarks.trim()) {
-            alert("Return Remarks are required.");
+            showAlert("Return Remarks are required.");
             return;
         }
 
         const returnStationName = inboundMovement?.fromStationName || inboundMovement?.station || 'Previous Station';
 
-        if (!window.confirm(`CONFIRM RETURN:\n\nReturn unit "${unitId}" back to "${returnStationName}"?`)) {
+        if (!await showConfirm(`CONFIRM RETURN:\n\nReturn unit "${unitId}" back to "${returnStationName}"?`)) {
             return;
         }
         setIsSubmittingScrap(true);
@@ -424,13 +425,13 @@ export const CalculatorStationForm = ({
                 returnRemarks: returnRemarks.trim()
             });
             if (res.success) {
-                alert(`Transaction Complete:\nUnit "${unitId}" successfully routed back to "${res.destination || returnStationName}".`);
+                showAlert(`Transaction Complete:\nUnit "${unitId}" successfully routed back to "${res.destination || returnStationName}".`);
                 onReset();
             } else {
-                alert(`Return Error: ${res.message || 'Operation failed.'}`);
+                showAlert(`Return Error: ${res.message || 'Operation failed.'}`);
             }
         } catch (err) {
-            alert(`Execution Error: ${err.message}`);
+            showAlert(`Execution Error: ${err.message}`);
         } finally {
             setIsSubmittingScrap(false);
         }
@@ -529,7 +530,7 @@ export const CalculatorStationForm = ({
                                                 {h.details?.returnRemarks && <div>{h.details.returnRemarks}</div>}
                                             </td>
                                             <td style={{ padding: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-                                                {h.timestamp ? new Date(h.timestamp).toLocaleString() : '—'}
+                                                {h.timestamp ? new Date(h.timestamp).toLocaleString('en-IN') : '—'}
                                             </td>
                                         </tr>
                                     ))}
@@ -763,7 +764,7 @@ export const CalculatorStationForm = ({
                             </div>
 
                             {reworkParts.map((p, idx) => (
-                                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                                <div key={idx} className="grid-part-entry" style={{ marginBottom: '0.5rem' }}>
                                     <input
                                         placeholder="Part Number"
                                         value={p.partNumber}
@@ -990,7 +991,7 @@ export const CalculatorStationForm = ({
 
                                     {/* Added Parts Table */}
                                     {assemblyParts.map((p, idx) => (
-                                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                                        <div key={idx} className="grid-part-entry" style={{ marginBottom: '0.5rem' }}>
                                             <input
                                                 placeholder="Part Number"
                                                 value={p.partNumber}

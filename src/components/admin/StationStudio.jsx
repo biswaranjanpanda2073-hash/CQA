@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Cpu,
@@ -204,7 +205,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
                 targetId = `${stationFormData.projectId}_${stationFormData.code || stationFormData.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
             }
             if (stations.some(s => s.id.toLowerCase() === targetId.toLowerCase())) {
-                alert(`A station with ID "${targetId}" already exists.`);
+                showAlert(`A station with ID "${targetId}" already exists.`);
                 return;
             }
         }
@@ -244,7 +245,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
             setEditingStation(null);
         } catch (err) {
             console.error('Failed to save station:', err);
-            alert(`Error saving station: ${err.message}`);
+            showAlert(`Error saving station: ${err.message}`);
         }
     };
 
@@ -257,7 +258,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
     const handleExecuteArchiveStation = async () => {
         if (!archivingStation) return;
         if (!archiveReason.trim()) {
-            alert('Please provide an operational reason for archiving this station.');
+            showAlert('Please provide an operational reason for archiving this station.');
             return;
         }
 
@@ -286,7 +287,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
             setArchivingStation(null);
         } catch (err) {
             console.error('Failed to archive station:', err);
-            alert(`Error archiving station: ${err.message}`);
+            showAlert(`Error archiving station: ${err.message}`);
         }
     };
 
@@ -334,7 +335,7 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
 
         if (editingCheckpoint === 'new') {
             if (checkpointsList.some(c => c.key === targetKey)) {
-                alert(`A checkpoint with key "${targetKey}" already exists.`);
+                showAlert(`A checkpoint with key "${targetKey}" already exists.`);
                 return;
             }
             setCheckpointsList(prev => [...prev, newCp]);
@@ -368,8 +369,8 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
     };
 
     // Delete checkpoint
-    const handleDeleteCheckpoint = (idx) => {
-        if (!window.confirm(`Remove checkpoint "${checkpointsList[idx].label}"?`)) return;
+    const handleDeleteCheckpoint = async (idx) => {
+        if (!await showConfirm(`Remove checkpoint "${checkpointsList[idx].label}"?`)) return;
         setCheckpointsList(prev => prev.filter((_, i) => i !== idx));
         setHasUnsavedCheckpoints(true);
     };
@@ -410,10 +411,10 @@ export const StationStudio = ({ user, initialProject = null, initialStationId = 
             });
 
             setHasUnsavedCheckpoints(false);
-            alert(`Checklist published successfully for ${selectedProject} station ${selectedStationId}!`);
+            showAlert(`Checklist published successfully for ${selectedProject} station ${selectedStationId}!`);
         } catch (err) {
             console.error('Failed to publish checkpoints:', err);
-            alert(`Error publishing checkpoints: ${err.message}`);
+            showAlert(`Error publishing checkpoints: ${err.message}`);
         }
     };
 

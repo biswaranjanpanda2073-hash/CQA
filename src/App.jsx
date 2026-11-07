@@ -13,6 +13,8 @@ import TopNav from './components/TopNav';
 import BaanModule from './components/BaanModule';
 import AdminLayout from './components/admin/AdminLayout';
 import ForceChangePassword from './components/ForceChangePassword';
+import GlobalDialogContainer from './components/common/GlobalDialogContainer';
+import { installGlobalDialogInterceptors } from './utils/dialogService';
 
 const AppContent = () => {
   const { store } = useCQA();
@@ -99,6 +101,8 @@ const AppContent = () => {
 
       setUser(null);
     });
+
+    installGlobalDialogInterceptors();
 
     return () => unsubscribe();
   }, []);
@@ -258,22 +262,21 @@ const AppContent = () => {
       />
       <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={() => setSidebarOpen(false)} />
       <div className="layout-right">
-        {activeSection !== 'dashboard' && (
-          <TopNav
-            theme={theme}
-            toggleTheme={toggleTheme}
-            activeSection={activeSection}
-            user={user}
-            onSectionChange={setActiveSection}
-            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          />
-        )}
+        <TopNav
+          theme={theme}
+          toggleTheme={toggleTheme}
+          activeSection={activeSection}
+          user={user}
+          onSectionChange={setActiveSection}
+          toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        />
         <main className={`main-content ${activeSection === 'dashboard' ? 'p-0 h-100' : ''}`}>
           <div className={activeSection === 'dashboard' ? 'h-100 p-0' : 'content-inner'}>
             {renderSection()}
           </div>
         </main>
       </div>
+      <GlobalDialogContainer />
     </div>
   );
 };

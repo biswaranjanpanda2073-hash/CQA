@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Network,
@@ -224,7 +225,7 @@ export const WorkflowStudio = ({ user, initialProject = 'Device' }) => {
         const newStId = Number(station.stationId || station.id);
 
         if (existingIds.has(newStId)) {
-            alert(`Station "${station.name}" (ID ${newStId}) already exists in this workflow.`);
+            showAlert(`Station "${station.name}" (ID ${newStId}) already exists in this workflow.`);
             return;
         }
 
@@ -277,12 +278,12 @@ export const WorkflowStudio = ({ user, initialProject = 'Device' }) => {
     // ─── PUBLISH WORKFLOW TO PRODUCTION ───
     const handlePublishWorkflow = async () => {
         if (!canPublish) {
-            alert('Unauthorized: You do not have permission to publish workflows.');
+            showAlert('Unauthorized: You do not have permission to publish workflows.');
             return;
         }
 
         if (!validationResult.isValid) {
-            alert(`Cannot publish workflow with topological errors:\n\n${validationResult.errors.join('\n')}`);
+            showAlert(`Cannot publish workflow with topological errors:\n\n${validationResult.errors.join('\n')}`);
             return;
         }
 
@@ -385,9 +386,9 @@ export const WorkflowStudio = ({ user, initialProject = 'Device' }) => {
                             <select
                                 className="form-control text-xs font-bold"
                                 value={selectedProjectId}
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                     if (isEditingDraft) {
-                                        if (window.confirm('You have unsaved draft changes. Discard and switch project?')) {
+                                        if (await showConfirm('You have unsaved draft changes. Discard and switch project?')) {
                                             setIsEditingDraft(false);
                                             setSelectedProjectId(e.target.value);
                                         }
@@ -633,8 +634,8 @@ export const WorkflowStudio = ({ user, initialProject = 'Device' }) => {
                                                     <button
                                                         type="button"
                                                         className="btn btn-ghost text-xs text-danger"
-                                                        onClick={() => {
-                                                            if (window.confirm(`Remove "${station.name}" from workflow?`)) {
+                                                        onClick={async () => {
+                                                            if (await showConfirm(`Remove "${station.name}" from workflow?`)) {
                                                                 handleRemoveStation(stId);
                                                             }
                                                         }}

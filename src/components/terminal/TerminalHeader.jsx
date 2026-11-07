@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Activity, Cpu, User } from 'lucide-react';
 import './TerminalUI.css';
 
@@ -37,8 +37,8 @@ export const TerminalHeader = ({
                     </div>
                 )}
 
-                <div className="terminal-status-group">
-                    {beforeLiveMes}
+                {/* System Status Indicators */}
+                <div className="terminal-status-group" aria-label="System status indicators">
                     {backendOnline && (
                         <div className="terminal-status-pill online" title="Backend connection active">
                             <div className="terminal-dot" />
@@ -64,9 +64,15 @@ export const TerminalHeader = ({
                             <span>{user.name}</span>
                         </div>
                     )}
-
-                    {extraMeta}
                 </div>
+
+                {/* Station Action Buttons (BOM Ref, Config, Advanced) */}
+                {(beforeLiveMes || extraMeta) && (
+                    <div className="terminal-actions-group" style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }} aria-label="Station actions">
+                        {beforeLiveMes}
+                        {extraMeta}
+                    </div>
+                )}
             </div>
         </header>
     );

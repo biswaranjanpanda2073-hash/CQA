@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useMemo } from 'react';
 import {
     Users,
@@ -131,7 +132,7 @@ export const UserControlSection = ({ user }) => {
             setShowAddUser(false);
             setNewUser({ id: '', name: '', password: '', role: 'Operator', stations: [] });
         } catch (err) {
-            alert(err.message);
+            showAlert(err.message);
         }
     };
 
@@ -150,42 +151,42 @@ export const UserControlSection = ({ user }) => {
                     if (pwChanged) {
                         const reauth = await authenticateUser(editUser.id, editUser.password);
                         if (!reauth?.success) {
-                            alert('Your user credentials were updated. Please log in with your new password.');
+                            showAlert('Your user credentials were updated. Please log in with your new password.');
                             await signOut(auth);
                         }
                     } else {
-                        alert('Your user permissions (role/station access) were updated. Please log in again to refresh your session.');
+                        showAlert('Your user permissions (role/station access) were updated. Please log in again to refresh your session.');
                         await signOut(auth);
                     }
                 }
             }
             setEditUser(null);
         } catch (err) {
-            alert(err.message);
+            showAlert(err.message);
         }
     };
 
 
-    const handleDeleteUser = (uid) => {
-        if (window.confirm(`Permanently remove user ${uid}?`)) {
+    const handleDeleteUser = async (uid) => {
+        if (await showConfirm(`Permanently remove user ${uid}?`)) {
             deleteUser(uid);
         }
     };
 
     const handleResolveTicket = async (ticketId, approved) => {
         if (!approved) {
-            if (window.confirm('Reject this password reset request?')) {
+            if (await showConfirm('Reject this password reset request?')) {
                 await updateTicketStatus(ticketId, 'Rejected');
             }
             return;
         }
 
-        const inputPw = window.prompt('Enter new password for user (min 8 characters), or leave blank for secure auto-generation:');
+        const inputPw = await showPrompt('Enter new password for user (min 8 characters), or leave blank for secure auto-generation:');
         if (inputPw === null) return; // Cancelled
 
         const trimmed = inputPw.trim();
         if (trimmed && trimmed.length < 8) {
-            alert('Password must be at least 8 characters long.');
+            showAlert('Password must be at least 8 characters long.');
             return;
         }
 
@@ -193,9 +194,9 @@ export const UserControlSection = ({ user }) => {
             const res = await resetUserPassword(ticketId, trimmed || undefined);
             const assignedPw = res?.temporaryPassword || res?.password || trimmed;
             await updateTicketStatus(ticketId, 'Approved');
-            alert(`Password reset successfully approved for user "${ticketId}".\n\nTemporary Password: ${assignedPw}\n\n(The user will be required to change this password on next login.)`);
+            showAlert(`Password reset successfully approved for user "${ticketId}".\n\nTemporary Password: ${assignedPw}\n\n(The user will be required to change this password on next login.)`);
         } catch (err) {
-            alert(`Failed to reset password: ${err.message || 'Unknown error'}`);
+            showAlert(`Failed to reset password: ${err.message || 'Unknown error'}`);
         }
     };
 
@@ -552,35 +553,35 @@ export const MaintenanceSection = ({ user, initialTab = 'controls' }) => {
                     const filters = hasFilters ? purgeFilters : purgeTarget;
 
                     if (!filters) {
-                        alert('Select a purge category or specific filters (Project/Station/Serial).');
+                        showAlert('Select a purge category or specific filters (Project/Station/Serial).');
                         setIsProcessing(false);
                         return;
                     }
 
                     if (filters === 'all') {
-                        const typed = window.prompt("DANGER: You are about to purge ALL device records. Type 'PURGE' to confirm:");
+                        const typed = await showPrompt("DANGER: You are about to purge ALL device records. Type 'PURGE' to confirm:");
                         if (typed !== 'PURGE') {
-                            alert("Purge cancelled: confirmation phrase did not match.");
+                            showAlert("Purge cancelled: confirmation phrase did not match.");
                             setIsProcessing(false);
                             return;
                         }
-                    } else if (!window.confirm("ARE YOU SURE? This will permanently delete matching records.")) {
+                    } else if (!await showConfirm("ARE YOU SURE? This will permanently delete matching records.")) {
                         setIsProcessing(false);
                         return;
                     }
 
                     const result = await purgeData(filters);
-                    alert(`Purge complete: ${result.count} records deleted.`);
+                    showAlert(`Purge complete: ${result.count} records deleted.`);
                     setPurgeFilters({ project: '', station: '', serial: '' });
                     setPurgeTarget('');
                     break;
                 case 'save_names':
                     await updateSystemNames(editNames);
-                    alert('System nomenclature updated successfully.');
+                    showAlert('System nomenclature updated successfully.');
                     break;
             }
         } catch (err) {
-            alert('Operation failed: ' + err.message);
+            showAlert('Operation failed: ' + err.message);
         }
         setIsProcessing(false);
         setConfirmModal(null);

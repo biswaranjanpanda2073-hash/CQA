@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { fetchAuditLogs } from '../../utils/auditLogger';
+import { formatDate, formatTime, formatActionCode } from '../../utils/formatters';
 
 export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
     const [logs, setLogs] = useState([]);
@@ -138,7 +139,7 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
 
             {/* Audit Table */}
             <div className="table-to-cards">
-                <div className="table-container card">
+                <div className="table-container table-scroll card">
                     <table>
                         <thead>
                             <tr>
@@ -156,18 +157,18 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
                                 <tr key={log.id}>
                                     <td data-label="Timestamp">
                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span className="text-mono text-xs font-bold">{new Date(log.timestamp).toLocaleDateString()}</span>
-                                            <span className="text-muted text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                                            <span className="text-mono text-xs font-bold">{formatDate(log.timestamp)}</span>
+                                            <span className="text-muted text-xs">{formatTime(log.timestamp)}</span>
                                         </div>
                                     </td>
                                     <td data-label="Actor">
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <div className="flex-center" style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--primary-alpha)', color: 'var(--primary)', fontSize: 11, fontWeight: 800 }}>
+                                            <div className="flex-center" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary-alpha)', color: 'var(--primary)', fontSize: 12, fontWeight: 800 }}>
                                                 {(log.actorName || 'A')[0]}
                                             </div>
                                             <div>
-                                                <span className="font-bold text-xs block">{log.actorName}</span>
-                                                <span className="text-xs text-muted font-semibold">{log.actorRole}</span>
+                                                <span className="font-bold text-xs block" style={{ color: 'var(--text-main)' }}>{log.actorName || 'System'}</span>
+                                                <span className="status-pill neutral" style={{ fontSize: '11px', padding: '1px 6px', marginTop: '2px', display: 'inline-block' }}>{log.actorRole || 'Operator'}</span>
                                             </div>
                                         </div>
                                     </td>
@@ -182,12 +183,27 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
                                             color: getActionBadgeColor(log.action),
                                             background: `${getActionBadgeColor(log.action)}12`
                                         }}>
-                                            {log.action}
+                                            {formatActionCode(log.action)}
                                         </span>
                                     </td>
                                     <td data-label="Entity">
-                                        <span className="text-xs font-bold uppercase text-muted block">{log.entity}</span>
-                                        <span className="text-mono font-bold text-xs">{log.entityId}</span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <span className="status-pill info" style={{ fontSize: '10px', textTransform: 'uppercase', alignSelf: 'flex-start' }}>{log.entity}</span>
+                                            <span
+                                                className="text-mono font-bold text-xs"
+                                                title={log.entityId}
+                                                style={{
+                                                    maxWidth: '140px',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    display: 'inline-block',
+                                                    color: 'var(--text-secondary)'
+                                                }}
+                                            >
+                                                {log.entityId}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td data-label="Project">
                                         <span className="text-xs font-semibold">{log.project || 'Global'}</span>
@@ -226,13 +242,20 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
             {/* Audit Log Detail Modal */}
             {selectedLog && (
                 <div className="modal-overlay" onClick={() => setSelectedLog(null)}>
-                    <div className="modal-content animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Audit Entry Details"
+                        className="modal-content animate-fade-in"
+                        onClick={e => e.stopPropagation()}
+                        style={{ maxWidth: 640 }}
+                    >
                         <div className="card-header" style={{ padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <Shield size={18} color="var(--primary)" />
                                 <h3 className="font-bold text-sm" style={{ margin: 0 }}>Audit Entry: {selectedLog.id}</h3>
                             </div>
-                            <button className="btn-ghost" onClick={() => setSelectedLog(null)} style={{ padding: 4 }}>
+                            <button className="btn-ghost" onClick={() => setSelectedLog(null)} aria-label="Close dialog" style={{ padding: 4 }}>
                                 <X size={16} />
                             </button>
                         </div>
@@ -241,19 +264,27 @@ export const AuditLogViewer = ({ _user, _initialProject = null } = {}) => {
                             <div className="grid grid-2 gap-3" style={{ background: 'var(--bg-input)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
                                 <div>
                                     <span className="text-xs text-muted uppercase font-bold block">Timestamp</span>
-                                    <span className="text-xs font-bold text-mono">{selectedLog.timestamp}</span>
+                                    <span className="text-xs font-bold text-mono">{formatDate(selectedLog.timestamp)} {formatTime(selectedLog.timestamp)}</span>
                                 </div>
                                 <div>
                                     <span className="text-xs text-muted uppercase font-bold block">Actor</span>
-                                    <span className="text-xs font-bold">{selectedLog.actorName} ({selectedLog.actorRole})</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '2px' }}>
+                                        <span className="text-xs font-bold">{selectedLog.actorName}</span>
+                                        <span className="status-pill neutral" style={{ fontSize: '11px' }}>{selectedLog.actorRole}</span>
+                                    </div>
                                 </div>
                                 <div>
                                     <span className="text-xs text-muted uppercase font-bold block">Action</span>
-                                    <span className="text-xs font-bold" style={{ color: getActionBadgeColor(selectedLog.action) }}>{selectedLog.action}</span>
+                                    <span className="text-xs font-bold" style={{ color: getActionBadgeColor(selectedLog.action) }}>
+                                        {formatActionCode(selectedLog.action)}
+                                    </span>
                                 </div>
                                 <div>
                                     <span className="text-xs text-muted uppercase font-bold block">Entity & ID</span>
-                                    <span className="text-xs font-bold">{selectedLog.entity}: {selectedLog.entityId}</span>
+                                    <div style={{ marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                        <span className="status-pill info" style={{ fontSize: '11px' }}>{selectedLog.entity}</span>
+                                        <span className="text-xs font-bold text-mono" title={selectedLog.entityId}>{selectedLog.entityId}</span>
+                                    </div>
                                 </div>
                             </div>
 

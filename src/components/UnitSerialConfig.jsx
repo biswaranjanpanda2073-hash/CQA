@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Scan,
@@ -168,7 +169,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                     setInputMode('bulk');
                 }
             } catch (err) {
-                alert('Failed to parse Excel / CSV file: ' + err.message);
+                showAlert('Failed to parse Excel / CSV file: ' + err.message);
             }
         };
         reader.readAsBinaryString(file);
@@ -178,7 +179,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
     const handleStartValidation = async () => {
         const raw = inputMode === 'single' ? singleInput : bulkInput;
         if (!raw || !raw.trim()) {
-            alert('Please enter or paste at least one Serial Number.');
+            showAlert('Please enter or paste at least one Serial Number.');
             return;
         }
 
@@ -195,7 +196,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
 
             setWizardStep(2);
         } catch (err) {
-            alert('Validation error: ' + err.message);
+            showAlert('Validation error: ' + err.message);
         } finally {
             setIsValidating(false);
         }
@@ -321,27 +322,27 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
     // ─── EXECUTE MOVEMENT OR STATUS OVERRIDE ───
     const handleExecuteMovement = async () => {
         if (overrideAction === 'STATION_DIRECT' && !selectedTargetStationObj) {
-            alert('Please choose a destination station from the grid.');
+            showAlert('Please choose a destination station from the grid.');
             return;
         }
 
         if (!reasonCategory || !selectedReason) {
-            alert('Reason category and reason are mandatory.');
+            showAlert('Reason category and reason are mandatory.');
             return;
         }
 
         if ((reasonCategory === 'Other' || impactSummary.maxRisk === 'HIGH') && !remarks.trim()) {
-            alert('Remarks / Authorization Details are mandatory for this operation.');
+            showAlert('Remarks / Authorization Details are mandatory for this operation.');
             return;
         }
 
         if (impactSummary.maxRisk === 'MEDIUM' && !skippedCheckbox) {
-            alert('Please check the confirmation box acknowledging this action.');
+            showAlert('Please check the confirmation box acknowledging this action.');
             return;
         }
 
         if (impactSummary.requiredConfirmPhrase && typedConfirmInput.trim().toUpperCase() !== impactSummary.requiredConfirmPhrase.toUpperCase()) {
-            alert(`Please type "${impactSummary.requiredConfirmPhrase}" to confirm this high-impact override.`);
+            showAlert(`Please type "${impactSummary.requiredConfirmPhrase}" to confirm this high-impact override.`);
             return;
         }
 
@@ -364,7 +365,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
             setExecutionReport(res);
             setWizardStep(7);
         } catch (err) {
-            alert('Execution failed: ' + err.message);
+            showAlert('Execution failed: ' + err.message);
             setWizardStep(5);
         } finally {
             setIsExecuting(false);
@@ -373,20 +374,20 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
 
     // ─── REVERSE MOVEMENT ───
     const handleReverseMovement = async (movId) => {
-        if (!window.confirm(`Are you sure you want to REVERSE movement ${movId}? This will safely route affected units back to their previous stations and log a reversal audit transaction.`)) {
+        if (!await showConfirm(`Are you sure you want to REVERSE movement ${movId}? This will safely route affected units back to their previous stations and log a reversal audit transaction.`)) {
             return;
         }
 
         setReversingId(movId);
         try {
             const res = await reverseAdminMovement(movId, user);
-            alert(`Movement ${movId} reversed successfully! Reversal Transaction: ${res.reversalMovementId}. Success: ${res.successCount}, Failures: ${res.failedCount}`);
+            showAlert(`Movement ${movId} reversed successfully! Reversal Transaction: ${res.reversalMovementId}. Success: ${res.successCount}, Failures: ${res.failedCount}`);
             loadHistory();
             if (selectedMovementDetail?.movementId === movId) {
                 setSelectedMovementDetail(null);
             }
         } catch (err) {
-            alert('Reversal failed: ' + err.message);
+            showAlert('Reversal failed: ' + err.message);
         } finally {
             setReversingId(null);
         }
@@ -1427,7 +1428,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                                     </td>
                                                     <td data-label="Date/Time">
                                                         <span className="text-xs text-muted">
-                                                            {m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}
+                                                            {m.createdAt ? new Date(m.createdAt).toLocaleString('en-IN') : '—'}
                                                         </span>
                                                     </td>
                                                     <td data-label="Actions" style={{ textAlign: 'right' }}>
@@ -1478,7 +1479,7 @@ export const UnitSerialConfig = ({ user, initialSerial, onNavigateToInfo }) => {
                                             Movement Details — {selectedMovementDetail.movementId}
                                         </h3>
                                         <span className="text-xs text-muted">
-                                            Logged at {new Date(selectedMovementDetail.createdAt).toLocaleString()}
+                                            Logged at {new Date(selectedMovementDetail.createdAt).toLocaleString('en-IN')}
                                         </span>
                                     </div>
                                     <button className="btn-ghost" onClick={() => setSelectedMovementDetail(null)} style={{ padding: '0.35rem' }}>

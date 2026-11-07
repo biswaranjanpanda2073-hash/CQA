@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState } from 'react';
 import { Lock, ShieldAlert, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
@@ -58,7 +59,7 @@ export default function ForceChangePassword({ user, onPasswordChanged, onLogout 
                         if (onPasswordChanged) onPasswordChanged();
                     }, 1200);
                 } else {
-                    alert('Password successfully updated! Please log in with your new password.');
+                    showAlert('Password successfully updated! Please log in with your new password.');
                     if (onLogout) onLogout();
                 }
             } else {

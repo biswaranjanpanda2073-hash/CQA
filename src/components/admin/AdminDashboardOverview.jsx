@@ -24,6 +24,7 @@ import { db, doc, getDoc, setDoc, onSnapshot, collection, getCountFromServer } f
 import { bootstrapConfiguration, checkConfigStatus } from '../../utils/configBootstrap';
 import { logAdminAction, AUDIT_ACTIONS } from '../../utils/auditLogger';
 import { hasPermission, PERMISSIONS } from '../../utils/rbacEngine';
+import { showAlert, showConfirm } from '../../utils/dialogService';
 
 export const AdminDashboardOverview = ({ user, onNavigate }) => {
     const isSuperAdmin = user?.role === 'Super Admin';
@@ -82,7 +83,7 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
     // Super Admin: Toggle dynamic config vs hardcoded dual-read fallback
     const handleToggleDynamicConfig = async () => {
         if (!isSuperAdmin) {
-            alert('SECURITY RESTRICTION: Only Super Admin can toggle runtime configuration mode.');
+            await showAlert('SECURITY RESTRICTION: Only Super Admin can toggle runtime configuration mode.');
             return;
         }
 
@@ -91,7 +92,12 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
             ? 'ENABLE DYNAMIC FIRESTORE CONFIGURATION?\n\nThe application runtime will read workflows and stations dynamically from Firestore. Hardcoded defaults will serve as automatic secondary fallback.'
             : 'DISABLE DYNAMIC CONFIGURATION (ROLLBACK TO HARDCODED FALLBACK)?\n\nThe application runtime will prioritize verified hardcoded JavaScript configurations.';
 
-        if (!window.confirm(confirmMsg)) return;
+        const confirmed = await showConfirm({
+            title: 'Confirm Configuration Mode',
+            message: confirmMsg,
+            danger: !nextState
+        });
+        if (!confirmed) return;
 
         setIsTogglingConfig(true);
         try {
@@ -115,7 +121,7 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
             });
         } catch (err) {
             console.error('Error toggling config mode:', err);
-            alert('Failed to update config mode: ' + err.message);
+            await showAlert('Failed to update config mode: ' + err.message);
         } finally {
             setIsTogglingConfig(false);
         }
@@ -124,13 +130,18 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
     // One-click Bootstrap Seeder
     const handleTriggerBootstrap = async (force = false) => {
         if (!isSuperAdmin && user?.role !== 'Admin') {
-            alert('Unauthorized: Admin access required to run configuration seeder.');
+            await showAlert('Unauthorized: Admin access required to run configuration seeder.');
             return;
         }
 
-        if (force && !window.confirm('FORCE RE-SEED? This will re-synchronize Firestore configuration documents with default hardcoded schemas. Existing production records will not be harmed.')) {
-            return;
-        }
+        const confirmed = await showConfirm({
+            title: 'Run Configuration Seeder',
+            message: force
+                ? 'FORCE RE-SEED? This will re-synchronize Firestore configuration documents with default hardcoded schemas. Existing production records will not be harmed.'
+                : 'Run configuration bootstrap seeder to ensure all project workflows and station definitions exist in database?',
+            danger: force
+        });
+        if (!confirmed) return;
 
         setIsBootstrapping(true);
         setBootstrapReport(null);
@@ -139,10 +150,10 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
             if (res.success) {
                 setBootstrapReport(res.summary);
             } else {
-                alert('Bootstrap encountered errors: ' + res.error);
+                await showAlert('Bootstrap encountered errors: ' + res.error);
             }
         } catch (err) {
-            alert('Bootstrap failed: ' + err.message);
+            await showAlert('Bootstrap failed: ' + err.message);
         } finally {
             setIsBootstrapping(false);
         }
@@ -168,16 +179,16 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
                                 boxShadow: `0 0 10px ${configGov.dynamicConfigEnabled ? 'var(--success)' : 'var(--warning)'}`
                             }} />
                             <h2 className="font-extrabold" style={{ fontSize: '1.35rem', margin: 0 }}>
-                                Runtime Engine: {configGov.dynamicConfigEnabled ? 'Dynamic Metadata-Driven' : 'Verified Hardcoded Fallback'}
+                                System Engine: {configGov.dynamicConfigEnabled ? 'Dynamic Metadata Rules' : 'Standard Production Rules'}
                             </h2>
-                            <span className={`status-pill ${configGov.dynamicConfigEnabled ? 'success' : 'warning'}`}>
-                                {configGov.dynamicConfigEnabled ? 'ACTIVE (LIVE)' : 'SAFE FALLBACK'}
+                            <span className={`status-pill ${configGov.dynamicConfigEnabled ? 'success' : 'info'}`}>
+                                {configGov.dynamicConfigEnabled ? 'DYNAMIC ACTIVE' : 'STANDARD PRODUCTION'}
                             </span>
                         </div>
                         <p className="text-xs text-muted" style={{ maxWidth: 640, lineHeight: 1.6 }}>
                             {configGov.dynamicConfigEnabled
                                 ? 'Production terminals dynamically consume workflows, stations, and checkpoints from Firestore with automatic local fallback.'
-                                : 'Production runs on verified hardcoded logic. Dynamic configurations can be safely edited, validated, and tested prior to activation.'}
+                                : 'Production runs on verified standard production rules. Dynamic configurations can be safely edited, validated, and tested prior to activation.'}
                         </p>
                     </div>
 
@@ -192,23 +203,34 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
                                 style={{ height: 42, padding: '0 1.25rem', fontSize: '0.8125rem', fontWeight: 700 }}
                             >
                                 <Power size={15} />
-                                <span>{configGov.dynamicConfigEnabled ? 'Rollback to Fallback' : 'Activate Dynamic Config'}</span>
+                                <span>{configGov.dynamicConfigEnabled ? 'Switch to Standard Rules' : 'Activate Dynamic Config'}</span>
                             </button>
                         )}
+                    </div>
+                </div>
 
+                {/* Collapsed Advanced Maintenance Seeder */}
+                <details style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-light)' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-muted)', userSelect: 'none' }}>
+                        Advanced: Configuration Seeder & Maintenance Utilities
+                    </summary>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                        <p className="text-xs text-muted" style={{ margin: 0, flex: 1, minWidth: 260 }}>
+                            Synchronize initial schemas, stations, and workflow structures into Firestore without altering existing production records.
+                        </p>
                         <button
                             type="button"
-                            className="btn btn-secondary"
+                            className="btn btn-secondary btn-sm"
                             onClick={() => handleTriggerBootstrap(false)}
                             disabled={isBootstrapping}
-                            style={{ height: 42, padding: '0 1.25rem', fontSize: '0.8125rem', fontWeight: 600 }}
+                            style={{ height: 38, padding: '0 1rem', fontSize: '0.8125rem', fontWeight: 600 }}
                             title="Seed missing configurations to Firestore safely"
                         >
-                            <RefreshCw size={15} className={isBootstrapping ? 'animate-spin' : ''} />
+                            <RefreshCw size={14} className={isBootstrapping ? 'animate-spin' : ''} />
                             <span>{isBootstrapping ? 'Seeding...' : 'Run Config Seeder'}</span>
                         </button>
                     </div>
-                </div>
+                </details>
 
                 {bootstrapReport && (
                     <div className="animate-fade-in" style={{
@@ -383,7 +405,7 @@ export const AdminDashboardOverview = ({ user, onNavigate }) => {
                                     <span className="font-bold">{l.actorName}</span>
                                     <span className="text-muted text-xs truncate" style={{ maxWidth: 350 }}>{l.reason || l.entityId}</span>
                                 </div>
-                                <span className="text-muted text-xs font-mono">{new Date(l.timestamp).toLocaleTimeString()}</span>
+                                <span className="text-muted text-xs font-mono">{new Date(l.timestamp).toLocaleTimeString('en-IN')}</span>
                             </div>
                         ))}
                     </div>

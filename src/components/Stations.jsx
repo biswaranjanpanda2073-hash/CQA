@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     ArrowRight, 
@@ -29,7 +30,8 @@ import {
     Loader2,
     Settings,
     Sparkles,
-    Boxes
+    Boxes,
+    ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -183,6 +185,7 @@ const Stations = ({ user }) => {
     const [selectedProject, setSelectedProject] = useState('');
     const [selectedStation, setSelectedStation] = useState('');
     const [accessDenied, setAccessDenied] = useState(false);
+    const [inAppStation, setInAppStation] = useState(null);
 
     // ── WIP data (kept for station status display inside dropdowns) ──
     const [wipData, setWipData] = React.useState({ 'Device': {}, 'Peripherals': {}, 'Inward QC': {}, 'Calculator': {} });
@@ -219,7 +222,7 @@ const Stations = ({ user }) => {
         setAccessDenied(false);
     };
 
-    // ── Enter handler: reuse existing access + open logic ──
+    // ── Enter handler: open directly in-app ──
     const handleEnter = () => {
         if (!selectedProject || !selectedStation) return;
         const station = availableStations.find(s => String(s.id) === selectedStation);
@@ -230,7 +233,20 @@ const Stations = ({ user }) => {
             return;
         }
 
-        // ── Exact same URL logic as original handleStationClick ──
+        setInAppStation({ project: selectedProject, stationId: station.id });
+    };
+
+    // ── Open in new tab handler ──
+    const handleOpenNewTab = () => {
+        if (!selectedProject || !selectedStation) return;
+        const station = availableStations.find(s => String(s.id) === selectedStation);
+        if (!station) return;
+
+        if (!hasAccess(user, selectedProject, station.name)) {
+            setAccessDenied(true);
+            return;
+        }
+
         const url = `${window.location.origin}${window.location.pathname}?project=${selectedProject}&stationId=${station.id}`;
         window.open(url, '_blank');
     };
@@ -288,6 +304,50 @@ const Stations = ({ user }) => {
             </div>
         );
     };
+
+    if (inAppStation) {
+        return (
+            <div className="in-app-station-container animate-fade-in">
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.6rem 1rem',
+                    background: 'var(--bg-card)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    marginBottom: '1rem',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem'
+                }}>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setInAppStation(null)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}
+                    >
+                        <ArrowLeft size={16} /> Back to Station Entry
+                    </button>
+                    <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        onClick={() => {
+                            const url = `${window.location.origin}${window.location.pathname}?project=${inAppStation.project}&stationId=${inAppStation.stationId}`;
+                            window.open(url, '_blank');
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}
+                    >
+                        <ExternalLink size={14} /> Open in New Tab
+                    </button>
+                </div>
+                <StationExecutionView
+                    user={user}
+                    directProject={inAppStation.project}
+                    directStationId={inAppStation.stationId}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="animate-fade-in">
@@ -378,7 +438,6 @@ const Stations = ({ user }) => {
                                         fontFamily: 'var(--font-sans)',
                                         appearance: 'none',
                                         cursor: 'pointer',
-                                        outline: 'none',
                                         transition: 'border-color 0.2s, box-shadow 0.2s',
                                         boxShadow: selectedProject ? '0 0 0 3px var(--primary-alpha)' : 'none',
                                     }}
@@ -433,7 +492,6 @@ const Stations = ({ user }) => {
                                         fontFamily: 'var(--font-sans)',
                                         appearance: 'none',
                                         cursor: selectedProject ? 'pointer' : 'not-allowed',
-                                        outline: 'none',
                                         opacity: selectedProject ? 1 : 0.6,
                                         transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s',
                                         boxShadow: selectedStation ? '0 0 0 3px var(--primary-alpha)' : 'none',
@@ -518,47 +576,65 @@ const Stations = ({ user }) => {
                             )}
                         </AnimatePresence>
 
-                        {/* ── Enter Button ── */}
-                        <button
-                            id="op-enter-btn"
-                            onClick={handleEnter}
-                            disabled={!canEnter}
-                            style={{
-                                width: '100%',
-                                padding: '0.8rem 1rem',
-                                borderRadius: '0.75rem',
-                                border: 'none',
-                                background: canEnter
-                                    ? 'linear-gradient(135deg, var(--primary) 0%, #14532d 100%)'
-                                    : 'var(--border)',
-                                color: canEnter ? '#fff' : 'var(--text-muted)',
-                                fontSize: '0.9rem',
-                                fontWeight: 700,
-                                fontFamily: 'var(--font-sans)',
-                                cursor: canEnter ? 'pointer' : 'not-allowed',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '0.5rem',
-                                transition: 'all 0.2s',
-                                boxShadow: canEnter ? '0 4px 16px rgba(22,101,52,0.35)' : 'none',
-                                transform: 'translateY(0)',
-                            }}
-                            onMouseEnter={e => { if (canEnter) e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                        >
-                            <ArrowRight size={18} />
-                            {canEnter
-                                ? `Enter — ${getDisplayName('stations', selectedStationObj?.name)}`
-                                : 'Select Project & Station to Continue'}
-                        </button>
+                        {/* ── Enter Button Group (In-App + New Tab) ── */}
+                        <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                            <button
+                                id="op-enter-btn"
+                                onClick={handleEnter}
+                                disabled={!canEnter}
+                                style={{
+                                    flex: 1,
+                                    padding: '0.8rem 1rem',
+                                    borderRadius: '0.75rem',
+                                    border: 'none',
+                                    background: canEnter
+                                        ? 'var(--primary)'
+                                        : 'var(--border)',
+                                    color: canEnter ? '#fff' : 'var(--text-muted)',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 700,
+                                    fontFamily: 'var(--font-sans)',
+                                    cursor: canEnter ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s',
+                                    boxShadow: canEnter ? 'var(--shadow-md)' : 'none',
+                                }}
+                            >
+                                <ArrowRight size={18} />
+                                {canEnter
+                                    ? `Enter — ${getDisplayName('stations', selectedStationObj?.name)}`
+                                    : 'Select Station to Continue'}
+                            </button>
+
+                            {canEnter && (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenNewTab}
+                                    title="Open station terminal in a new browser tab"
+                                    className="btn btn-secondary"
+                                    style={{
+                                        padding: '0.8rem 0.9rem',
+                                        borderRadius: '0.75rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0
+                                    }}
+                                >
+                                    <ExternalLink size={18} />
+                                </button>
+                            )}
+                        </div>
 
                         {/* Helper note */}
                         <p style={{
                             textAlign: 'center', marginTop: '0.75rem',
-                            fontSize: '0.72rem', color: 'var(--text-muted)',
+                            fontSize: '0.75rem', color: 'var(--text-muted)',
                         }}>
-                            The station will open in a new tab. 🔒 indicates stations outside your access.
+                            Opens directly in-app or in a new tab. 🔒 indicates stations outside your access.
                         </p>
                     </div>
 
@@ -654,7 +730,7 @@ export const StationExecutionView = ({ stationId, project, user }) => {
             const validation = await validateScan(cleanId, selectedStation, project);
             if (validation.success) {
                 if (validation.prompt) {
-                    if (window.confirm(validation.prompt)) setIsProcessing(true);
+                    if (await showConfirm(validation.prompt)) setIsProcessing(true);
                 } else {
                     setIsProcessing(true);
                 }
@@ -902,13 +978,13 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                             errorMessage={errorMessage}
                                             activeUnit={activeUnit}
                                             onUnhold={async () => {
-                                                if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
+                                                if (await showConfirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
                                                     const res = await unholdCalculatorSerial(activeUnit.id);
                                                     if (res.success) {
-                                                        alert(`Unit "${activeUnit.id}" has been unheld.`);
+                                                        showAlert(`Unit "${activeUnit.id}" has been unheld.`);
                                                         handleReset();
                                                     } else {
-                                                        alert(`Unhold error: ${res.message}`);
+                                                        showAlert(`Unhold error: ${res.message}`);
                                                     }
                                                 }
                                             }}
@@ -1238,14 +1314,14 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                             className="btn btn-primary"
                                             style={{ width: '100%', height: 38, fontSize: '0.85rem', fontWeight: 700 }}
                                             onClick={async () => {
-                                                if (window.confirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
+                                                if (await showConfirm(`Unhold serial "${activeUnit.id}" at ${activeUnit.holdStation}?`)) {
                                                     const res = await unholdCalculatorSerial(activeUnit.id);
                                                     if (res.success) {
-                                                        alert(`Unit "${activeUnit.id}" has been unheld.`);
+                                                        showAlert(`Unit "${activeUnit.id}" has been unheld.`);
                                                         setShowStationConfig(false);
                                                         handleReset();
                                                     } else {
-                                                        alert(`Unhold error: ${res.message}`);
+                                                        showAlert(`Unhold error: ${res.message}`);
                                                     }
                                                 }
                                             }}
@@ -1263,11 +1339,11 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                             className="btn btn-secondary"
                                             style={{ width: '100%', height: 38, fontSize: '0.85rem', fontWeight: 700, color: '#d97706', borderColor: '#f59e0b' }}
                                             onClick={async () => {
-                                                const reason = window.prompt('Enter hold reason (e.g. Component Verification, Quality Pause):', 'Quality Pause');
+                                                const reason = await showPrompt('Enter hold reason (e.g. Component Verification, Quality Pause):', 'Quality Pause');
                                                 if (!reason) return;
-                                                const remarks = window.prompt('Additional hold remarks (optional):', '') || '';
+                                                const remarks = await showPrompt('Additional hold remarks (optional):', '') || '';
                                                 const targetId = (scannedId || activeUnit?.id || '').trim().toUpperCase();
-                                                if (!targetId) { alert('No unit scanned to hold.'); return; }
+                                                if (!targetId) { showAlert('No unit scanned to hold.'); return; }
                                                 
                                                 await processUnit(targetId, {
                                                     station: selectedStation,
@@ -1275,7 +1351,7 @@ export const StationExecutionView = ({ stationId, project, user }) => {
                                                     result: 'Hold',
                                                     details: { textValues: { holdReason: reason, holdRemarks: remarks } }
                                                 });
-                                                alert(`Unit "${targetId}" placed on HOLD at ${selectedStation.name}.`);
+                                                showAlert(`Unit "${targetId}" placed on HOLD at ${selectedStation.name}.`);
                                                 setShowStationConfig(false);
                                                 handleReset();
                                             }}
@@ -1446,7 +1522,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                     ...prev,
                     [checkpoint]: prev[checkpoint].filter(img => img.id !== tempId)
                 }));
-                alert(`Upload failed: ${error}`);
+                showAlert(`Upload failed: ${error}`);
             }
         } catch (err) {
             console.error("Image attachment error:", err);
@@ -1465,7 +1541,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
             if (request && request.status === 'Issued') {
                 const res = await consumeBaanParts(baanRequestId, partChangeQty, unitId, partChangeReason || formData.details.remarks, JSON.parse(localStorage.getItem('cqa_user') || '{}'));
                 if (!res.success) {
-                    alert('Inventory consumption failed: ' + res.message);
+                    showAlert('Inventory consumption failed: ' + res.message);
                     return;
                 }
             }
@@ -1476,13 +1552,13 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
             const list = activeList;
             const anyFail = Object.values(checklist).includes(false);
             const allDone = Object.keys(checklist).length === list.length;
-            if (!allDone) { alert(`Incomplete: Please verify all ${list.length} items.`); return; }
+            if (!allDone) { showAlert(`Incomplete: Please verify all ${list.length} items.`); return; }
             if (anyFail) {
-                if (!formData.details.remarks?.trim()) { alert('Remarks required for failure points.'); return; }
-                if (!formData.decision) { alert('Select failure disposition.'); return; }
+                if (!formData.details.remarks?.trim()) { showAlert('Remarks required for failure points.'); return; }
+                if (!formData.decision) { showAlert('Select failure disposition.'); return; }
             }
         }
-        if (!formData.result) { alert('Please select a Pass or Fail result to continue.'); return; }
+        if (!formData.result) { showAlert('Please select a Pass or Fail result to continue.'); return; }
 
         // Filter out pending images and normalize to URL strings for DB storage
         const sanitizedCheckpointImages = {};
@@ -1547,7 +1623,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
     const handleCsvSelect = (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { alert("File exceeds 5MB limit."); return; }
+        if (file.size > 5 * 1024 * 1024) { showAlert("File exceeds 5MB limit."); return; }
         setCsvFile(file);
         
         const reader = new FileReader();
@@ -1557,7 +1633,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
             
-            if (raw.length < 2) { alert("Template is empty."); return; }
+            if (raw.length < 2) { showAlert("Template is empty."); return; }
 
             // Logic: Skip header and process rows
             const rows = raw.slice(1).filter(r => r.length > 0 && r[0]).map(r => {
@@ -1622,7 +1698,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
             setCsvRows(updatedRows);
         } catch (err) {
             console.error("CSV Validation Error:", err);
-            alert("An error occurred during validation. Please check the file format.");
+            showAlert("An error occurred during validation. Please check the file format.");
         } finally {
             setIsProcessingCsv(false);
         }
@@ -1630,7 +1706,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
 
     const handleCsvProcess = async () => {
         const readyRows = csvRows.filter(r => r.status === 'Ready');
-        if (readyRows.length === 0) { alert('No valid rows to process.'); return; }
+        if (readyRows.length === 0) { showAlert('No valid rows to process.'); return; }
 
         setIsProcessingCsv(true);
         
@@ -1658,7 +1734,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
         setCsvRows([]);
         setCsvFile(null);
         onBulkComplete();
-        alert(`Bulk ingestion complete. Success: ${result.success}, Failed: ${result.fail}`);
+        showAlert(`Bulk ingestion complete. Success: ${result.success}, Failed: ${result.fail}`);
     };
 
     const downloadErrorCsv = () => {
@@ -1711,11 +1787,11 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
                         <form onSubmit={e => {
                             e.preventDefault();
                             const raw = e.target.ids.value.split('\n').map(x => x.trim().toUpperCase().replace(/\//g, '-')).filter(x => x);
-                            if (!raw.length) { alert('Enter at least one Serial Number.'); return; }
-                            if (projectCategory === 'Device' && !formData.details.productType) { alert('Select Device Type.'); return; }
-                            if (projectCategory === 'Calculator' && !formData.details.productType) { alert('Select Device Type.'); return; }
-                            if (projectCategory === 'Peripherals' && (!formData.details.category || !formData.details.productType)) { alert('Select Category and Device Type.'); return; }
-                            if (projectCategory === 'Inward QC' && !formData.details.productType) { alert('Select Device Type.'); return; }
+                            if (!raw.length) { showAlert('Enter at least one Serial Number.'); return; }
+                            if (projectCategory === 'Device' && !formData.details.productType) { showAlert('Select Device Type.'); return; }
+                            if (projectCategory === 'Calculator' && !formData.details.productType) { showAlert('Select Device Type.'); return; }
+                            if (projectCategory === 'Peripherals' && (!formData.details.category || !formData.details.productType)) { showAlert('Select Category and Device Type.'); return; }
+                            if (projectCategory === 'Inward QC' && !formData.details.productType) { showAlert('Select Device Type.'); return; }
                             raw.forEach(id => onComplete({ details: formData.details }, id));
                             onBulkComplete();
                         }}>
@@ -2073,7 +2149,7 @@ const StationForm = ({ project, station, unitId, unitData, onComplete, onBulkCom
         const handleNormalReworkStart = () => {
             const existingRequest = Object.values(store.baan.partRequests || {}).find(r => r.deviceSn === unitId && r.status !== 'Consumed' && r.status !== 'Consumption Completed');
             if (existingRequest) {
-                alert(`CRITICAL ALERT: A pending BAAN Part Request (${existingRequest.id}) exists for this SN. ` +
+                showAlert(`CRITICAL ALERT: A pending BAAN Part Request (${existingRequest.id}) exists for this SN. ` +
                     `Normal Rework is blocked. Please select "Part Change" to consume issued parts.`);
                 return;
             }

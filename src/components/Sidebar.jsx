@@ -85,10 +85,11 @@ const Sidebar = ({ activeSection, setActiveSection, onLogout, user, isOpen, setO
                 >
                     <X size={18} />
                 </button>
-                {/* Mobile close */}
+                {/* Drawer close (visible <=1279px) */}
                 <button
-                    className="btn-ghost show-mobile-only"
+                    className="btn-ghost drawer-trigger"
                     onClick={() => setOpen(false)}
+                    aria-label="Close sidebar"
                     style={{
                         padding: '0.4rem',
                         borderRadius: 'var(--radius-sm)',

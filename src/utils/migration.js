@@ -1,4 +1,4 @@
-import { db, devicesCol, getDocs, doc, collection, writeBatch, getDoc, setDoc } from '../firebase';
+﻿import { db, devicesCol, getDocs, doc, collection, writeBatch, getDoc, setDoc } from '../firebase';
 
 /**
  * CQA MES Zero-Data-Loss Migration Script

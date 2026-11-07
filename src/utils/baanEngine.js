@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — BAAN Master Data & Inventory Engine
  * Pure business logic for part normalization, validation,
  * warehouse locations, and stock health deficit calculations.

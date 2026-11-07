@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { hasPermission, hasAnyPermission } from '../../utils/rbacEngine';
 import { useCQA } from '../../hooks/useCQA';
 

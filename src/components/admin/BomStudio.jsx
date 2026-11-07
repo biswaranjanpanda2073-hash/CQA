@@ -438,6 +438,7 @@ export const BomStudio = ({ user }) => {
                                         borderColor: 'var(--border)'
                                     }}
                                 >
+                                    {variantRevisions.length === 0 && <option value="">No Revisions</option>}
                                     {variantRevisions.map(r => (
                                         <option key={r.revision} value={r.revision}>
                                             {r.revision} {r.revision === activeHeader.activeRevision ? '★ Active' : ''}
@@ -486,7 +487,7 @@ export const BomStudio = ({ user }) => {
                                 id="btn-mrp-shortage"
                                 className="btn btn-primary btn-sm"
                                 onClick={() => setShowMrpModal(true)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'linear-gradient(135deg, #4f46e5, #06b6d4)' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                                 title="Run Material Requirements Planning (MRP) analysis against BAAN stock"
                             >
                                 <Boxes size={14} /> MRP Shortage Plan
@@ -533,9 +534,11 @@ export const BomStudio = ({ user }) => {
                     <div>
                         <strong>{activeHeader.variantName || selectedVariantId}</strong> — {currentRevisionDoc?.changeNotes || 'Initial baseline BOM from Tohands engineering specifications.'}
                     </div>
-                    <div>
-                        Uploaded by <strong>{currentRevisionDoc?.uploadedBy || 'Tohands Engineering'}</strong> on {new Date(currentRevisionDoc?.uploadedAt || Date.now()).toLocaleDateString()}
-                    </div>
+                    {currentRevisionDoc && (
+                        <div>
+                            Uploaded by <strong>{currentRevisionDoc.uploadedBy || 'Tohands Engineering'}</strong> on {new Date(currentRevisionDoc.uploadedAt || Date.now()).toLocaleDateString('en-IN')}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -700,7 +703,7 @@ export const BomStudio = ({ user }) => {
             {/* DATA GRID */}
             {/* ═══════════════════════════════════════════════════════════ */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
+                <div className="table-scroll" style={{ overflowX: 'auto', marginBottom: 0 }}>
                     <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
                             <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
@@ -940,7 +943,7 @@ export const BomStudio = ({ user }) => {
                         </div>
 
                         {/* Revision Metadata Inputs */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <div className="grid-responsive-2col" style={{ marginBottom: '1rem' }}>
                             <div>
                                 <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                                     Revision ID *
@@ -1000,7 +1003,7 @@ export const BomStudio = ({ user }) => {
                                     </span>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', fontSize: '0.75rem', textAlign: 'center' }}>
+                                <div className="grid-responsive-sm" style={{ fontSize: '0.75rem', textAlign: 'center' }}>
                                     <div style={{ background: 'var(--bg-primary)', padding: '0.4rem', borderRadius: 4 }}>
                                         Mechanical: <strong>{uploadParseResult.summary.categoryCounts?.Mechanical || 0}</strong>
                                     </div>
@@ -1311,7 +1314,7 @@ export const BomStudio = ({ user }) => {
 
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
                                             <span>{rev.itemCount || 48} parts</span>
-                                            <span>By {rev.uploadedBy || 'Engineering'} • {new Date(rev.uploadedAt || Date.now()).toLocaleDateString()}</span>
+                                            <span>By {rev.uploadedBy || 'Engineering'} • {new Date(rev.uploadedAt || Date.now()).toLocaleDateString('en-IN')}</span>
                                         </div>
 
                                         {!isActive && canActivate && (

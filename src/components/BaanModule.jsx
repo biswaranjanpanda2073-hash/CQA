@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
@@ -156,7 +157,7 @@ const BaanDashboard = ({ onNavigate }) => {
                     <div>
                         <div className="baan-kpi-label">Total Unique Parts</div>
                         <div className="baan-kpi-value">{stats.totalParts}</div>
-                        <div className="text-xs text-muted" style={{ marginTop: '0.25rem' }}>{stats.totalStockUnits.toLocaleString()} total units</div>
+                        <div className="text-xs text-muted" style={{ marginTop: '0.25rem' }}>{stats.totalStockUnits.toLocaleString('en-IN')} total units</div>
                     </div>
                     <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-accent-alpha)', color: 'var(--baan-accent)' }}>
                         <Package size={22} />
@@ -583,7 +584,7 @@ const BaanLocations = ({ user }) => {
         
         // Safety Rule A: Cannot archive with active stock
         if (!isArchived && meta.totalUnits > 0) {
-            alert(`Archiving Blocked: Location '${loc.name}' has ${meta.totalUnits} active units in stock. Transfer or issue all stock before archiving.`);
+            showAlert(`Archiving Blocked: Location '${loc.name}' has ${meta.totalUnits} active units in stock. Transfer or issue all stock before archiving.`);
             return;
         }
 
@@ -619,11 +620,11 @@ const BaanLocations = ({ user }) => {
                 setSafetyModalLoc(null);
                 setTimeout(() => setStatusBanner(null), 5000);
             } else {
-                alert(res.message);
+                showAlert(res.message);
             }
         } catch (error) {
             console.error(error);
-            alert('Failed to delete location.');
+            showAlert('Failed to delete location.');
         } finally {
             setIsProcessing(false);
         }
@@ -765,13 +766,13 @@ const BaanLocations = ({ user }) => {
                                         )}
                                     </td>
                                     <td className="num-col font-bold" style={{ color: meta.totalUnits > 0 ? 'var(--baan-accent)' : 'inherit' }}>
-                                        {meta.totalUnits.toLocaleString()} Units
+                                        {meta.totalUnits.toLocaleString('en-IN')} Units
                                     </td>
                                     <td className="num-col font-bold">
                                         {meta.uniqueParts.size} SKUs
                                     </td>
                                     <td className="text-xs text-muted">
-                                        {loc.updatedAt ? `Updated ${new Date(loc.updatedAt).toLocaleDateString()}` : loc.createdAt ? `Created ${new Date(loc.createdAt).toLocaleDateString()}` : '—'}
+                                        {loc.updatedAt ? `Updated ${new Date(loc.updatedAt).toLocaleDateString('en-IN')}` : loc.createdAt ? `Created ${new Date(loc.createdAt).toLocaleDateString('en-IN')}` : '—'}
                                     </td>
                                     {isAuthorizedAdmin && (
                                         <td style={{ textAlign: 'center' }}>
@@ -1073,7 +1074,7 @@ const BaanInwardHistory = () => {
                     <tbody>
                         {filteredLogs.map(log => (
                             <tr key={log.id}>
-                                <td className="text-xs text-muted">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
+                                <td className="text-xs text-muted">{log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN') : '—'}</td>
                                 <td className="font-bold text-mono" style={{ color: 'var(--baan-accent)' }}>{log.partNumber}</td>
                                 <td className="font-semibold">{log.partName}</td>
                                 <td className="num-col font-bold">{log.quantity}</td>
@@ -2033,7 +2034,7 @@ const BaanRequest = () => {
                                                     <div style={{ textAlign: 'center', width: '100%' }}>
                                                         <span className={`baan-badge ${hasStock ? 'success' : 'danger'}`}
                                                             style={{ fontSize: '0.78rem', display: 'inline-flex', padding: '0.3rem 0.65rem', fontWeight: 700, width: '100%', justifyContent: 'center' }}>
-                                                            {meta.availableStock.toLocaleString()} {hasStock ? 'in stock' : 'out'}
+                                                            {meta.availableStock.toLocaleString('en-IN')} {hasStock ? 'in stock' : 'out'}
                                                         </span>
                                                     </div>
                                                 ) : (
@@ -2123,7 +2124,7 @@ const BaanRequest = () => {
                             </div>
                             <div className="baan-req-summary-item">
                                 <span className="label">Total Units</span>
-                                <span className="value">{totalUnits > 0 ? totalUnits.toLocaleString() : '—'}</span>
+                                <span className="value">{totalUnits > 0 ? totalUnits.toLocaleString('en-IN') : '—'}</span>
                             </div>
                             <div className="baan-req-summary-item">
                                 <span className="label">Unique Parts</span>
@@ -2167,7 +2168,7 @@ const BaanRequest = () => {
                         <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
                             {[
                                 { label: 'Line Items', value: selectedCount || '—', highlight: selectedCount > 0 },
-                                { label: 'Total Units', value: totalUnits > 0 ? totalUnits.toLocaleString() : '—', highlight: totalUnits > 0 },
+                                { label: 'Total Units', value: totalUnits > 0 ? totalUnits.toLocaleString('en-IN') : '—', highlight: totalUnits > 0 },
                                 { label: 'Unique Parts', value: uniqueParts || '—', highlight: uniqueParts > 0 },
                             ].map(({ label, value, highlight }) => (
                                 <div key={label} style={{
@@ -2295,12 +2296,12 @@ const BaanDcPreview = ({ request, onClose }) => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', fontSize: '13px', color: '#000000' }}>
                         <div>
                             <p style={{ margin: '0 0 6px 0' }}><strong>Request ID:</strong> {request.id}</p>
-                            <p style={{ margin: '0 0 6px 0' }}><strong>Request Date:</strong> {request.requestedAt ? new Date(request.requestedAt).toLocaleDateString() : '—'}</p>
+                            <p style={{ margin: '0 0 6px 0' }}><strong>Request Date:</strong> {request.requestedAt ? new Date(request.requestedAt).toLocaleDateString('en-IN') : '—'}</p>
                             <p style={{ margin: 0 }}><strong>Requested By:</strong> {request.requestedBy || 'Store User'}</p>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <p style={{ margin: '0 0 6px 0' }}><strong>Document Date:</strong> {new Date().toLocaleDateString()}</p>
-                            <p style={{ margin: '0 0 6px 0' }}><strong>Issue Date:</strong> {request.issuedAt ? new Date(request.issuedAt).toLocaleDateString() : 'Pending'}</p>
+                            <p style={{ margin: '0 0 6px 0' }}><strong>Document Date:</strong> {new Date().toLocaleDateString('en-IN')}</p>
+                            <p style={{ margin: '0 0 6px 0' }}><strong>Issue Date:</strong> {request.issuedAt ? new Date(request.issuedAt).toLocaleDateString('en-IN') : 'Pending'}</p>
                             <p style={{ margin: 0 }}><strong>Issued By:</strong> {request.issuedBy || 'Store Controller'}</p>
                         </div>
                     </div>
@@ -2366,38 +2367,38 @@ const BaanIssuance = () => {
     const isAdmin = user?.role === 'Admin' || user?.role === 'Supervisor';
 
     const handleIssue = async (request) => {
-        if (!window.confirm(`Issue ${request.requestedQty} of ${request.partNo || request.partNumber}? This will deduct inventory immediately.`)) return;
+        if (!await showConfirm(`Issue ${request.requestedQty} of ${request.partNo || request.partNumber}? This will deduct inventory immediately.`)) return;
         
         setIsProcessing(true);
         try {
             const res = await issueBaanParts(request.id, user);
             if (res.success) {
-                alert(`Successfully issued ${request.requestedQty} x ${request.partNo || request.partNumber}`);
+                showAlert(`Successfully issued ${request.requestedQty} x ${request.partNo || request.partNumber}`);
             } else {
-                alert(`Failed to issue: ${res.message}`);
+                showAlert(`Failed to issue: ${res.message}`);
             }
         } catch (error) {
             console.error(error);
-            alert('An error occurred during issuance.');
+            showAlert('An error occurred during issuance.');
         } finally {
             setIsProcessing(false);
         }
     };
 
     const handleManualClose = async (request) => {
-        if (!window.confirm(`Force close request ${request.id}? Remaining qty (${request.remainingQty}) will not be consumed.`)) return;
+        if (!await showConfirm(`Force close request ${request.id}? Remaining qty (${request.remainingQty}) will not be consumed.`)) return;
         
         setIsProcessing(true);
         try {
             const res = await manualCloseBaanRequest(request.id, user);
             if (res.success) {
-                alert(`Request ${request.id} forcefully closed.`);
+                showAlert(`Request ${request.id} forcefully closed.`);
             } else {
-                alert(`Failed to close request: ${res.message}`);
+                showAlert(`Failed to close request: ${res.message}`);
             }
         } catch (error) {
             console.error(error);
-            alert('An error occurred.');
+            showAlert('An error occurred.');
         } finally {
             setIsProcessing(false);
         }
@@ -2441,7 +2442,7 @@ const BaanIssuance = () => {
                                     <td className="font-semibold">{r.partName}</td>
                                     <td className="num-col font-bold">{r.requestedQty || r.quantityRequested}</td>
                                     <td><span className="baan-badge neutral">👤 {r.requestedBy}</span></td>
-                                    <td className="text-xs text-muted">{r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '—'}</td>
+                                    <td className="text-xs text-muted">{r.requestedAt ? new Date(r.requestedAt).toLocaleString('en-IN') : '—'}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
                                             <button 
@@ -2504,7 +2505,7 @@ const BaanIssuance = () => {
                                         <td className="text-mono font-bold" style={{ color: 'var(--baan-accent)' }}>{r.partNo || r.partNumber}</td>
                                         <td className="num-col font-bold">{r.requestedQty || r.quantityRequested}</td>
                                         <td className="num-col font-bold" style={{ color: 'var(--baan-danger)' }}>{r.remainingQty}</td>
-                                        <td className="text-xs text-muted">{r.issuedAt ? new Date(r.issuedAt).toLocaleString() : '—'}</td>
+                                        <td className="text-xs text-muted">{r.issuedAt ? new Date(r.issuedAt).toLocaleString('en-IN') : '—'}</td>
                                         <td className="text-xs text-muted">{r.issuedBy || '—'}</td>
                                         <td style={{ textAlign: 'right' }}>
                                             <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
@@ -2652,7 +2653,7 @@ const BaanInventory = () => {
                 <div className="baan-kpi-card" style={{ padding: '0.65rem 1rem', cursor: 'default' }}>
                     <div>
                         <div className="baan-kpi-label" style={{ fontSize: '0.625rem' }}>Total Units</div>
-                        <div className="baan-kpi-value" style={{ fontSize: '1.25rem' }}>{kpiSummary.totalUnits.toLocaleString()}</div>
+                        <div className="baan-kpi-value" style={{ fontSize: '1.25rem' }}>{kpiSummary.totalUnits.toLocaleString('en-IN')}</div>
                     </div>
                     <div className="baan-kpi-icon-box" style={{ width: 34, height: 34, background: 'var(--baan-surface-muted)', color: 'var(--baan-text-secondary)' }}>
                         <Layers size={17} />
@@ -2910,7 +2911,7 @@ const BaanInventory = () => {
                                             .map((batch, idx) => (
                                                 <tr key={batch.id}>
                                                     <td className="text-mono font-bold text-xs">{batch.batchNumber || batch.id}</td>
-                                                    <td className="text-xs text-muted">{new Date(batch.inwardDate).toLocaleDateString()}</td>
+                                                    <td className="text-xs text-muted">{new Date(batch.inwardDate).toLocaleDateString('en-IN')}</td>
                                                     <td className="num-col font-bold">{batch.quantityAvailable}</td>
                                                     <td className="num-col">₹{Number(batch.perUnitCost || 0).toFixed(2)}</td>
                                                     <td>
@@ -2968,7 +2969,7 @@ const BaanReverseInventory = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (returnQty > remainingReturnableQty) {
-            alert('Return quantity exceeds available balance');
+            showAlert('Return quantity exceeds available balance');
             return;
         }
         
@@ -2977,12 +2978,12 @@ const BaanReverseInventory = () => {
         const res = await returnBaanParts(selectedRequestId, Number(returnQty), Number(consumedQty), reason, user);
         
         if (res.success) {
-            alert('Reverse inventory processed successfully. Stock has been credited back.');
+            showAlert('Reverse inventory processed successfully. Stock has been credited back.');
             setSelectedRequestId('');
             setReturnQty(0);
             setReason('');
         } else {
-            alert(res.message || 'Failed to process return');
+            showAlert(res.message || 'Failed to process return');
         }
         setIsProcessing(false);
     };
@@ -3186,7 +3187,7 @@ const BaanAnalytics = () => {
                 'Batch Valuation (INR)': Number((avail * cost).toFixed(2)),
                 'Minimum Stock Level': minStock,
                 'Stock Status': avail === 0 ? 'Out of Stock' : avail <= minStock ? 'Low Stock' : 'In Stock',
-                'Inward Date': b.inwardDate ? new Date(b.inwardDate).toLocaleString() : '—',
+                'Inward Date': b.inwardDate ? new Date(b.inwardDate).toLocaleString('en-IN') : '—',
                 'Invoice/DC Reference': b.reference || '—',
                 'Remarks': b.remarks || '—'
             };
@@ -3200,7 +3201,7 @@ const BaanAnalytics = () => {
             const cost = Number(l.perUnitCost || baan.batches?.[l.batchId]?.perUnitCost || 0);
             return {
                 'Inward ID': l.id || '—',
-                'Inward Date': l.timestamp ? new Date(l.timestamp).toLocaleString() : '—',
+                'Inward Date': l.timestamp ? new Date(l.timestamp).toLocaleString('en-IN') : '—',
                 'Part Number': l.partNumber || '—',
                 'Part Name': l.partName || baan.parts?.[l.partNumber]?.name || '—',
                 'MPN': l.mpn || baan.parts?.[l.partNumber]?.mpn || '—',
@@ -3226,7 +3227,7 @@ const BaanAnalytics = () => {
             const remQty = r.remainingQty !== undefined ? Number(r.remainingQty) : Math.max(0, reqQty - consQty - retQty);
             return {
                 'Request ID': r.id || '—',
-                'Request Date': r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '—',
+                'Request Date': r.requestedAt ? new Date(r.requestedAt).toLocaleString('en-IN') : '—',
                 'Device Serial Number': r.deviceSn || '—',
                 'Issue Category': r.issueCategory || 'General Rework',
                 'Part Number': r.partNo || r.partNumber || '—',
@@ -3237,9 +3238,9 @@ const BaanAnalytics = () => {
                 'Remaining Quantity': remQty,
                 'Request Status': r.status || '—',
                 'Requested By': r.requestedBy || '—',
-                'Issued Date': r.issuedAt ? new Date(r.issuedAt).toLocaleString() : '—',
+                'Issued Date': r.issuedAt ? new Date(r.issuedAt).toLocaleString('en-IN') : '—',
                 'Issued By': r.issuedBy || '—',
-                'Closed Date': r.closedManuallyAt ? new Date(r.closedManuallyAt).toLocaleString() : '—',
+                'Closed Date': r.closedManuallyAt ? new Date(r.closedManuallyAt).toLocaleString('en-IN') : '—',
                 'Closed By': r.closedManuallyBy || '—',
                 'Remarks': r.remarks || '—'
             };
@@ -3275,8 +3276,8 @@ const BaanAnalytics = () => {
         const sheet4Data = allIssuances.map(i => ({
             'Issuance ID': i.id || '—',
             'Request ID': i.requestId || '—',
-            'Issued Date': i.issuedAt ? new Date(i.issuedAt).toLocaleString() : '—',
-            'Request Date': i.requestedAt ? new Date(i.requestedAt).toLocaleString() : '—',
+            'Issued Date': i.issuedAt ? new Date(i.issuedAt).toLocaleString('en-IN') : '—',
+            'Request Date': i.requestedAt ? new Date(i.requestedAt).toLocaleString('en-IN') : '—',
             'Device Serial Number': i.deviceSn || '—',
             'Part Number': i.partNumber || '—',
             'Part Name': i.partName || '—',
@@ -3309,7 +3310,7 @@ const BaanAnalytics = () => {
         const sheet5Data = allConsumptions.map(c => ({
             'Movement / Log ID': c.id || '—',
             'Request ID': c.requestId || '—',
-            'Consumption Date': c.timestamp ? new Date(c.timestamp).toLocaleString() : '—',
+            'Consumption Date': c.timestamp ? new Date(c.timestamp).toLocaleString('en-IN') : '—',
             'Device Serial Number': c.deviceSn || '—',
             'Part Number': c.partNumber || c.partNo || '—',
             'Part Name': baan.parts?.[c.partNumber || c.partNo]?.name || baan.partRequests?.[c.requestId]?.partName || '—',
@@ -3340,7 +3341,7 @@ const BaanAnalytics = () => {
         const sheet6Data = allReturns.map(r => ({
             'Return ID': r.id || '—',
             'Request ID': r.requestId || '—',
-            'Return Date': r.timestamp ? new Date(r.timestamp).toLocaleString() : '—',
+            'Return Date': r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN') : '—',
             'Device Serial Number': r.deviceSn || '—',
             'Part Number': r.partNumber || r.partNo || '—',
             'Part Name': baan.parts?.[r.partNumber || r.partNo]?.name || baan.partRequests?.[r.requestId]?.partName || '—',
@@ -3361,7 +3362,7 @@ const BaanAnalytics = () => {
             const cost = Number(m.perUnitCost || baan.batches?.[m.batchId]?.perUnitCost || 0);
             return {
                 'Movement ID': m.id || '—',
-                'Movement Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString() : '—',
+                'Movement Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString('en-IN') : '—',
                 'Movement Type': m.movementType || m.type || '—',
                 'Part Number': m.partNumber || m.partNo || '—',
                 'Part Name': baan.parts?.[m.partNumber || m.partNo]?.name || '—',
@@ -3392,8 +3393,8 @@ const BaanAnalytics = () => {
                 'Current Stock Units': stat.totalUnits || 0,
                 'Stored SKU Count': stat.uniqueParts ? stat.uniqueParts.size : 0,
                 'Created By': loc.createdBy || 'System',
-                'Created Date': loc.createdAt ? new Date(loc.createdAt).toLocaleString() : '—',
-                'Updated Date': loc.updatedAt ? new Date(loc.updatedAt).toLocaleString() : '—'
+                'Created Date': loc.createdAt ? new Date(loc.createdAt).toLocaleString('en-IN') : '—',
+                'Updated Date': loc.updatedAt ? new Date(loc.updatedAt).toLocaleString('en-IN') : '—'
             };
         });
         addSheet(sheet8Data, 'Locations Master');
@@ -3420,7 +3421,7 @@ const BaanAnalytics = () => {
                 'Total Available Stock': totalStock,
                 'Total Stock Valuation (INR)': Number(totalVal.toFixed(2)),
                 'Stock Status': totalStock === 0 ? 'Out of Stock' : totalStock <= minStock ? 'Low Stock' : 'Adequate Stock',
-                'Last Updated Date': (p.lastUpdated || p.lastInward) ? new Date(p.lastUpdated || p.lastInward).toLocaleString() : '—'
+                'Last Updated Date': (p.lastUpdated || p.lastInward) ? new Date(p.lastUpdated || p.lastInward).toLocaleString('en-IN') : '—'
             };
         });
         addSheet(sheet9Data, 'Part Master');
@@ -3460,7 +3461,7 @@ const BaanAnalytics = () => {
             data = Object.values(inventoryMap);
         } else if (type === 'Movements') {
             data = Object.values(baan.inventoryMovements || {}).map(m => ({
-                'Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString() : '—',
+                'Date': (m.timestamp || m.uploadedAt) ? new Date(m.timestamp || m.uploadedAt).toLocaleString('en-IN') : '—',
                 'Movement Type': m.movementType || m.type,
                 'Part Number': m.partNumber || m.partNo,
                 'Quantity': m.quantity || m.qtyAdded || m.qtyReturned || 0,
@@ -3474,7 +3475,7 @@ const BaanAnalytics = () => {
         } else if (type === 'Requests') {
             data = Object.values(baan.partRequests || {}).map(r => ({
                 'Request ID': r.id,
-                'Date': new Date(r.requestedAt).toLocaleString(),
+                'Date': new Date(r.requestedAt).toLocaleString('en-IN'),
                 'Part Number': r.partNo || r.partNumber,
                 'Part Name': r.partName,
                 'Requested Qty': r.requestedQty || r.quantityRequested,
@@ -3483,13 +3484,13 @@ const BaanAnalytics = () => {
                 'Remaining Qty': r.remainingQty,
                 'Status': r.status,
                 'Requested By': r.requestedBy,
-                'Issued At': r.issuedAt ? new Date(r.issuedAt).toLocaleString() : '',
+                'Issued At': r.issuedAt ? new Date(r.issuedAt).toLocaleString('en-IN') : '',
                 'Issued By': r.issuedBy || ''
             })).sort((a, b) => new Date(b.Date) - new Date(a.Date));
         }
 
         if (data.length === 0) {
-            alert('No data available to export.');
+            showAlert('No data available to export.');
             return;
         }
 
@@ -3571,7 +3572,7 @@ const BaanAnalytics = () => {
                 <div className="baan-kpi-card" style={{ cursor: 'default' }}>
                     <div>
                         <div className="baan-kpi-label">Total Stocked Units</div>
-                        <div className="baan-kpi-value">{stats.totalUnits.toLocaleString()}</div>
+                        <div className="baan-kpi-value">{stats.totalUnits.toLocaleString('en-IN')}</div>
                     </div>
                     <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-accent-alpha)', color: 'var(--baan-accent)' }}>
                         <Package size={20} />
@@ -3580,7 +3581,7 @@ const BaanAnalytics = () => {
                 <div className="baan-kpi-card" style={{ cursor: 'default' }}>
                     <div>
                         <div className="baan-kpi-label">Total Lifetime Issued Units</div>
-                        <div className="baan-kpi-value">{stats.totalIssued.toLocaleString()}</div>
+                        <div className="baan-kpi-value">{stats.totalIssued.toLocaleString('en-IN')}</div>
                     </div>
                     <div className="baan-kpi-icon-box" style={{ background: 'var(--baan-success-bg)', color: 'var(--baan-success)' }}>
                         <Send size={20} />
@@ -3680,7 +3681,7 @@ const BaanRequestHistory = () => {
                         {requests.map(r => (
                             <tr key={r.id}>
                                 <td className="font-bold text-mono">{r.id}</td>
-                                <td className="text-xs text-muted">{r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '—'}</td>
+                                <td className="text-xs text-muted">{r.requestedAt ? new Date(r.requestedAt).toLocaleString('en-IN') : '—'}</td>
                                 <td className="font-bold text-mono" style={{ color: 'var(--baan-accent)' }}>{r.partNo || r.partNumber}</td>
                                 <td className="font-semibold">{r.partName}</td>
                                 <td className="num-col font-bold">{r.requestedQty || r.quantityRequested}</td>
@@ -3759,8 +3760,8 @@ const BaanIssuanceHistory = () => {
                     <tbody>
                         {history.map(h => (
                             <tr key={h.id}>
-                                <td className="text-xs text-muted">{h.requestedAt ? new Date(h.requestedAt).toLocaleString() : '—'}</td>
-                                <td className="text-xs text-muted">{h.issuedAt ? new Date(h.issuedAt).toLocaleString() : '—'}</td>
+                                <td className="text-xs text-muted">{h.requestedAt ? new Date(h.requestedAt).toLocaleString('en-IN') : '—'}</td>
+                                <td className="text-xs text-muted">{h.issuedAt ? new Date(h.issuedAt).toLocaleString('en-IN') : '—'}</td>
                                 <td className="text-mono font-bold" style={{ color: 'var(--baan-accent)' }}>{h.partNumber}</td>
                                 <td className="font-semibold">{h.partName || '—'}</td>
                                 <td><span className="baan-badge neutral">👤 {h.requestedBy || '—'}</span></td>

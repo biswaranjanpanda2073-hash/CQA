@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Layers,
@@ -175,11 +176,11 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
                 targetId = formData.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
             }
             if (!targetId) {
-                alert('Project ID is required.');
+                showAlert('Project ID is required.');
                 return;
             }
             if (projects.some(p => p.id.toLowerCase() === targetId.toLowerCase())) {
-                alert(`A project with ID "${targetId}" already exists.`);
+                showAlert(`A project with ID "${targetId}" already exists.`);
                 return;
             }
         }
@@ -233,7 +234,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             setEditingProject(null);
         } catch (err) {
             console.error('Failed to save project:', err);
-            alert(`Error saving project: ${err.message}`);
+            showAlert(`Error saving project: ${err.message}`);
         }
     };
 
@@ -258,7 +259,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
         const val = specInputs[inputKey].trim();
         if (!val) return;
         if (specsData[field].includes(val)) {
-            alert(`"${val}" already exists in this list.`);
+            showAlert(`"${val}" already exists in this list.`);
             return;
         }
         setSpecsData(prev => ({
@@ -300,7 +301,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             setSpecsProject(null);
         } catch (err) {
             console.error('Failed to update specs:', err);
-            alert(`Error updating specs: ${err.message}`);
+            showAlert(`Error updating specs: ${err.message}`);
         }
     };
 
@@ -335,7 +336,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             // Validate regex string syntax
             new RegExp(serialRulesData.regex);
         } catch (e) {
-            alert(`Invalid regular expression syntax: ${e.message}`);
+            showAlert(`Invalid regular expression syntax: ${e.message}`);
             return;
         }
 
@@ -362,7 +363,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             setSerialRulesProject(null);
         } catch (err) {
             console.error('Failed to update serial rules:', err);
-            alert(`Error updating serial rules: ${err.message}`);
+            showAlert(`Error updating serial rules: ${err.message}`);
         }
     };
 
@@ -380,11 +381,11 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
         e.preventDefault();
         const targetId = cloneData.newId.trim();
         if (!targetId) {
-            alert('New Project ID is required.');
+            showAlert('New Project ID is required.');
             return;
         }
         if (projects.some(p => p.id.toLowerCase() === targetId.toLowerCase())) {
-            alert(`A project with ID "${targetId}" already exists.`);
+            showAlert(`A project with ID "${targetId}" already exists.`);
             return;
         }
 
@@ -419,7 +420,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             setCloningProject(null);
         } catch (err) {
             console.error('Failed to clone project:', err);
-            alert(`Error cloning project: ${err.message}`);
+            showAlert(`Error cloning project: ${err.message}`);
         }
     };
 
@@ -432,7 +433,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
     const handleExecuteArchive = async () => {
         if (!archivingProject) return;
         if (!archiveReason.trim()) {
-            alert('Please provide an operational reason for archiving this project.');
+            showAlert('Please provide an operational reason for archiving this project.');
             return;
         }
 
@@ -461,7 +462,7 @@ export const ProjectStudio = ({ user, onNavigateToWorkflow }) => {
             setArchivingProject(null);
         } catch (err) {
             console.error('Failed to archive project:', err);
-            alert(`Error archiving project: ${err.message}`);
+            showAlert(`Error archiving project: ${err.message}`);
         }
     };
 

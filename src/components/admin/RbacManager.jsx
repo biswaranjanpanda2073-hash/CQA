@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Shield,
@@ -152,12 +153,12 @@ export const RbacManager = ({ user }) => {
 
     const handleSaveRolePermissions = async () => {
         if (!canManageRoles) {
-            alert('Unauthorized: Only Super Admin can modify system role permissions.');
+            showAlert('Unauthorized: Only Super Admin can modify system role permissions.');
             return;
         }
 
         if (selectedRole === 'Super Admin') {
-            alert('Super Admin permissions are immutable (wildcard *).');
+            showAlert('Super Admin permissions are immutable (wildcard *).');
             return;
         }
 

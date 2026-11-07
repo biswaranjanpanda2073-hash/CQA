@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+﻿import React, { useRef, useState, useEffect } from 'react';
 import { Camera, X, RefreshCw, Check, Loader2, Image as ImageIcon } from 'lucide-react';
 
 const ImageCapture = ({ onCapture, onClose, title = "Capture Proof" }) => {

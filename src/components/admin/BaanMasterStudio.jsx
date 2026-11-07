@@ -1,3 +1,4 @@
+﻿import { showAlert, showConfirm, showPrompt } from '../../utils/dialogService';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     Database,
@@ -178,12 +179,12 @@ export const BaanMasterStudio = ({ user }) => {
         const pn = partFormData.partNumber.trim().toUpperCase();
 
         if (!pn) {
-            alert('Part Number is required.');
+            showAlert('Part Number is required.');
             return;
         }
 
         if (isNew && partsMap[pn]) {
-            alert(`Part Number "${pn}" already exists in the master catalog.`);
+            showAlert(`Part Number "${pn}" already exists in the master catalog.`);
             return;
         }
 
@@ -222,7 +223,7 @@ export const BaanMasterStudio = ({ user }) => {
             setEditingPart(null);
         } catch (err) {
             console.error('Failed to save BAAN part:', err);
-            alert(`Error saving part: ${err.message}`);
+            showAlert(`Error saving part: ${err.message}`);
         }
     };
 
@@ -234,7 +235,7 @@ export const BaanMasterStudio = ({ user }) => {
     const handleExecuteArchivePart = async () => {
         if (!archivingPart) return;
         if (!partArchiveReason.trim()) {
-            alert('Operational reason required for audit trail.');
+            showAlert('Operational reason required for audit trail.');
             return;
         }
 
@@ -263,7 +264,7 @@ export const BaanMasterStudio = ({ user }) => {
             setArchivingPart(null);
         } catch (err) {
             console.error('Failed to archive part:', err);
-            alert(`Error archiving part: ${err.message}`);
+            showAlert(`Error archiving part: ${err.message}`);
         }
     };
 
@@ -302,11 +303,11 @@ export const BaanMasterStudio = ({ user }) => {
                 locId = locFormData.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
             }
             if (!locId) {
-                alert('Location ID / Code is required.');
+                showAlert('Location ID / Code is required.');
                 return;
             }
             if (locationsMap[locId]) {
-                alert(`Location "${locId}" already exists.`);
+                showAlert(`Location "${locId}" already exists.`);
                 return;
             }
         }
@@ -343,7 +344,7 @@ export const BaanMasterStudio = ({ user }) => {
             setEditingLoc(null);
         } catch (err) {
             console.error('Failed to save location:', err);
-            alert(`Error saving location: ${err.message}`);
+            showAlert(`Error saving location: ${err.message}`);
         }
     };
 
@@ -355,7 +356,7 @@ export const BaanMasterStudio = ({ user }) => {
     const handleExecuteArchiveLoc = async () => {
         if (!archivingLoc) return;
         if (!locArchiveReason.trim()) {
-            alert('Operational reason required for audit trail.');
+            showAlert('Operational reason required for audit trail.');
             return;
         }
 
@@ -382,7 +383,7 @@ export const BaanMasterStudio = ({ user }) => {
             setArchivingLoc(null);
         } catch (err) {
             console.error('Failed to archive location:', err);
-            alert(`Error archiving location: ${err.message}`);
+            showAlert(`Error archiving location: ${err.message}`);
         }
     };
 
@@ -593,7 +594,7 @@ export const BaanMasterStudio = ({ user }) => {
                                             }}>
                                                 <span className="text-muted font-bold">Unit Cost:</span>
                                                 <span className="font-extrabold" style={{ color: 'var(--primary)' }}>
-                                                    ₹{Number(part.unitCost || 0).toLocaleString()}
+                                                    ₹{Number(part.unitCost || 0).toLocaleString('en-IN')}
                                                 </span>
                                             </div>
 

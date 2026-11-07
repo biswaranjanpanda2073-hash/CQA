@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/api/client.js
  * Centralized REST & WebSocket API client for CQA MES.
  * Connects to Kotlin Spring Boot backend (port 8080) with JWT authentication.

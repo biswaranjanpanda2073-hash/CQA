@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Role-Based Access Control (RBAC) Engine
  * Granular permission keys, default system roles, and authorization helpers.
  */

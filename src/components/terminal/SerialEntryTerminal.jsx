@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { Scan, Cpu, Activity, Database, CheckCircle2, AlertTriangle, RefreshCw, Layers } from 'lucide-react';
 import './TerminalUI.css';
 

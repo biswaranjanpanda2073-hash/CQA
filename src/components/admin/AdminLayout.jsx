@@ -146,17 +146,20 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
                 </div>
             </div>
 
-            {/* Scrollable Navigation Pill Bar */}
-            <div style={{
+            {/* Scrollable Navigation Pill Bar (Hidden on desktop >=1280px where sidebar shows all options) */}
+            <div className="admin-tab-strip" style={{
                 display: 'flex',
                 gap: '0.5rem',
                 overflowX: 'auto',
                 overflowY: 'hidden',
+                whiteSpace: 'nowrap',
+                flexWrap: 'nowrap',
                 paddingBottom: '0.75rem',
                 marginBottom: '1.5rem',
                 borderBottom: '1px solid var(--border)',
-                scrollbarWidth: 'thin',
-                WebkitOverflowScrolling: 'touch'
+                scrollbarWidth: 'none',
+                WebkitOverflowScrolling: 'touch',
+                scrollSnapType: 'x mandatory'
             }}>
                 {navItems.map(item => {
                     const isPermitted = !item.perm || isSuperAdmin || hasPermission(user, item.perm);
@@ -178,6 +181,8 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
                                 padding: '0.65rem 1.25rem',
                                 borderRadius: 'var(--radius-lg)',
                                 border: '1px solid',
+                                flexShrink: 0,
+                                scrollSnapAlign: 'start',
                                 borderColor: isActive ? 'var(--primary)' : 'var(--border)',
                                 background: isActive ? 'var(--primary)' : 'var(--bg-card)',
                                 color: isActive ? '#fff' : 'var(--text-main)',
@@ -186,8 +191,7 @@ export const AdminLayout = ({ user, initialTab = 'overview', initialSerial = nul
                                 whiteSpace: 'nowrap',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
-                                boxShadow: isActive ? '0 2px 8px rgba(22, 101, 52, 0.25)' : 'var(--shadow-sm)',
-                                flexShrink: 0
+                                boxShadow: isActive ? '0 2px 8px rgba(22, 101, 52, 0.25)' : 'var(--shadow-sm)'
                             }}
                             onMouseEnter={(e) => {
                                 if (!isActive) {

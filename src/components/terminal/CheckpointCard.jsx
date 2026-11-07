@@ -344,7 +344,7 @@ export const CheckpointCard = ({
             <div className="checkpoint-control-group cols-3">
                 <button
                     type="button"
-                    className={`checkpoint-btn ${isPass ? 'selected-pass' : ''}`}
+                    className={`checkpoint-btn ${isPass ? 'selected-pass' : 'btn-idle-pass'}`}
                     onClick={() => onSelectStatus?.('Pass')}
                     title="Mark checkpoint as Pass (Shortcut: P)"
                 >
@@ -354,7 +354,7 @@ export const CheckpointCard = ({
 
                 <button
                     type="button"
-                    className={`checkpoint-btn ${isFail ? 'selected-fail' : ''}`}
+                    className={`checkpoint-btn ${isFail ? 'selected-fail' : 'btn-idle-fail'}`}
                     onClick={() => onSelectStatus?.('Fail')}
                     title="Mark checkpoint as Fail (Shortcut: F)"
                 >
@@ -364,7 +364,7 @@ export const CheckpointCard = ({
 
                 <button
                     type="button"
-                    className={`checkpoint-btn ${isHold ? 'selected-hold' : ''}`}
+                    className={`checkpoint-btn ${isHold ? 'selected-hold' : 'btn-idle-hold'}`}
                     onClick={() => onSelectStatus?.('Hold')}
                     title="Mark checkpoint as Hold (Shortcut: H)"
                 >

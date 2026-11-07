@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { LogIn, Loader2, AlertTriangle, Lock, Factory, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useCQA } from '../hooks/useCQA';
 

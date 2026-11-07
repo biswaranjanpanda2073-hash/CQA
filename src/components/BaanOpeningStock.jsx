@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, showPrompt } from '../utils/dialogService';
 import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -109,7 +110,7 @@ export const BaanOpeningStock = () => {
     // Handle Template Download
     const handleDownloadTemplate = () => {
         if (bomComponents.length === 0) {
-            alert('Cannot download template: No components found in the selected BOM revision.');
+            showAlert('Cannot download template: No components found in the selected BOM revision.');
             return;
         }
         const variantName = activeHeader?.variantName || activeHeader?.name || selectedVariantId;
@@ -259,7 +260,7 @@ export const BaanOpeningStock = () => {
     const handleCommitOpeningStock = async () => {
         if (reconciliationItems.length === 0) return;
         if (summary.blocked > 0) {
-            alert('Cannot post: There are critical discrepancies where shortage exceeds available stock. Please resolve them before posting.');
+            showAlert('Cannot post: There are critical discrepancies where shortage exceeds available stock. Please resolve them before posting.');
             return;
         }
 
@@ -273,7 +274,7 @@ export const BaanOpeningStock = () => {
             const lockResult = await acquireSkuLocks(skuList, sessionId, currentUser);
 
             if (!lockResult.success) {
-                alert(`Lock Acquisition Failed:\n${lockResult.message}`);
+                showAlert(`Lock Acquisition Failed:\n${lockResult.message}`);
                 setIsPosting(false);
                 return;
             }
@@ -341,7 +342,7 @@ export const BaanOpeningStock = () => {
             setCurrentStep(3);
         } catch (err) {
             console.error("Posting Error:", err);
-            alert(`Opening Stock Posting Error: ${err.message}`);
+            showAlert(`Opening Stock Posting Error: ${err.message}`);
         } finally {
             setIsPosting(false);
         }
@@ -555,7 +556,7 @@ export const BaanOpeningStock = () => {
             {currentStep === 2 && (
                 <div>
                     {/* Metric Cards Banner */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                    <div className="grid-responsive" style={{ marginBottom: '1.5rem' }}>
                         <div style={{ background: '#1e293b', padding: '0.9rem', borderRadius: '8px', borderLeft: '4px solid #38bdf8' }}>
                             <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Parts</div>
                             <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#f8fafc' }}>{summary.total}</div>
@@ -660,7 +661,7 @@ export const BaanOpeningStock = () => {
                     )}
 
                     {/* Reconciliation Table */}
-                    <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: '8px' }}>
+                    <div className="table-scroll" style={{ border: '1px solid #334155', borderRadius: '8px' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                             <thead>
                                 <tr style={{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
@@ -728,7 +729,7 @@ export const BaanOpeningStock = () => {
                         Inventory batches have been created, movement ledgers recorded, and inventory locks released cleanly.
                     </p>
 
-                    <div style={{ display: 'inline-grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', background: '#1e293b', padding: '1rem 1.5rem', borderRadius: '8px', marginBottom: '1.5rem', textAlign: 'left' }}>
+                    <div className="grid-responsive" style={{ background: '#1e293b', padding: '1rem 1.5rem', borderRadius: '8px', marginBottom: '1.5rem', textAlign: 'left', width: '100%' }}>
                         <div>
                             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Session ID</div>
                             <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#38bdf8' }}>{postResult.sessionId}</div>

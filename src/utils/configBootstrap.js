@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CQA MES — Configuration Seeder & Bootstrap Utility
  * Safely extracts existing hardcoded configurations (projects, stations,
  * workflows, checklists, roles) and seeds them into Firestore if not present.
